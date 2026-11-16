@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Prompt Forge 工作台预览</title>
+<style>
+html,body{margin:0;height:100%;background:#15161a;overflow:hidden}
+</style>
+</head>
+<body>
+<script type="module">
+import { openPanel } from "./prompt_forge_core_v5.js";
+const node = { widgets: [{ name: "template_override", value: "" }], setDirtyCanvas() {} };
+openPanel(node);
+const p = new URLSearchParams(location.search);
+const tab = p.get("tab") || "free";
+const level = p.get("level");
+const q = p.get("q");
+if (level) {
+  const sel = document.querySelector(".pf-win .sel");
+  sel.value = level;
+  sel.dispatchEvent(new Event("change"));
+}
+if (q) {
+  const s = document.querySelector(".pf-win .search");
+  s.value = q;
+  s.dispatchEvent(new Event("input"));
+}
+if (tab === "tpl") {
+  setTimeout(() => {
+    document.querySelectorAll(".pf-win .tab")[1].click();
+  }, 800);
+}
+</script>
+</body>
+</html>
