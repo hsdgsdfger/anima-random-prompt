@@ -1,6 +1,6 @@
 # anima 随机提示词 · Prompt Forge
 
-> ComfyUI 自定义节点 ｜ 版本 **v0.11.16** ｜ 独立于 V6，不依赖任何第三方库
+> ComfyUI 自定义节点 ｜ 版本 **v0.11.17** ｜ 独立于 V6，不依赖任何第三方库
 
 一个「随机出整段提示词 + 可视化工作台手选」的 ComfyUI 节点。自带分级词库、1800 套场景模板、场景逻辑互斥校验，以及一个仿 V6 风格的网页工作台（自由选词 / 模板卡片两个页签）。
 
@@ -21,7 +21,7 @@ git clone https://github.com/hsdgsdfger/anima-random-prompt.git Comfyui-Prompt-F
 重启后，节点出现在：
 
 ```
-添加节点 → AnimaDecouple / Prompt Forge → Prompt Forge 随机提示词 v5 工作台
+添加节点 → AnimaDecouple / Prompt Forge → Prompt Forge 随机提示词（中文）
 ```
 
 升级：
@@ -37,24 +37,26 @@ git pull
 
 ## 快速开始
 
-1. 添加节点 `Prompt Forge 随机提示词 v5 工作台`。
+1. 添加节点 `Prompt Forge 随机提示词（中文）`。
 2. 直接排队 → 每次运行随机生成一整段正向提示词 + 负向提示词。
-3. 想自己挑词：点节点底部 **「⚙ 打开工作台 v5」**，在面板里勾选，勾选即实时写回节点的 `template_override`。
+3. 想自己挑词：点节点底部 **「⚙ 打开提示词工作台」**，在面板里勾选，勾选即实时写回节点的 `template_override`。
 4. 想用现成模板：工作台切到 **「🗂 模板卡片」**，选场景分类 → 展开标签确认 → `套用到节点`。
 
 ---
 
-## v0.11.16 功能概览
+## v0.11.17 功能概览
 
 ### 节点
 
 | 项目 | 说明 |
 | --- | --- |
 | 节点类 | `PromptForgeRandom` |
-| 显示名 | Prompt Forge 随机提示词 v5 工作台 |
+| 显示名 | Prompt Forge 随机提示词（中文） |
 | 分类 | `AnimaDecouple/Prompt Forge` |
 | 输出 | `positive` / `negative` / `level` / `report`（4 个 STRING） |
 | 覆盖输入 | `template_override`（可选，填入后直接使用这段文本，跳过随机） |
+| 每次重抽 | `random_each_run`（默认开，勾上后忽略固定种子，每跑一次换一份） |
+| 控件语言 | 控件标签全部中文；专有名词（JSON、danbooru、`sfw`/`explicit` 档位键）保留英文 |
 
 ### 随机引擎
 
@@ -150,3 +152,4 @@ Comfyui-Prompt-Forge/
 ## 许可
 
 个人使用仓库，未附带开源许可证；如需公开分发请先补充 LICENSE。
+

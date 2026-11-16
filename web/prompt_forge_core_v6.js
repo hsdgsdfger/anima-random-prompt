@@ -441,7 +441,7 @@ function openPanel(node) {
 
   const head = el("div", "head");
   const logo = el("div", "logo");
-  logo.innerHTML = "⚙ Prompt Forge <small>提示词工作台 · v5 分类平铺</small>";
+  logo.innerHTML = "⚙ Prompt Forge <small>提示词工作台 · v6 中文界面</small>";
   head.appendChild(logo);
 
   const tabs = el("div", "tabs");
@@ -688,4 +688,5 @@ if (!document.getElementById("pf-style")) {
 
 
 export { openPanel };
+
 

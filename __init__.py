@@ -9,7 +9,7 @@ import time
 from .engine import (LEVEL_CHOICES, LEVEL_ZH, LEVEL_NUM, generate,
                      load_data, tag_level)
 
-__version__ = "0.11.16"
+__version__ = "0.11.17"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 
 _LEVEL_WITH_ZH = [f"{k} · {LEVEL_ZH[k]}" if k != "any" else "any · 不限" for k in LEVEL_CHOICES]
@@ -57,6 +57,8 @@ class PromptForgeRandom:
                                                "tooltip": "场景成套 = 环境/服装/道具绑在一个场景里，出词讲究现实逻辑；自由随机 = 全库各抽各的（组合更多但容易矛盾）"}),
                 "template_override": ("STRING", {"default": "", "multiline": True,
                                                  "tooltip": "面板里点“套用”会自动填这里；非空时直接用它当正向提示词（不再随机）"}),
+                "random_each_run": ("BOOLEAN", {"default": True,
+                                                "tooltip": "每次运行都重新随机：勾上后忽略固定种子，每跑一次换一份"}),
             },
         }
 
@@ -69,24 +71,27 @@ class PromptForgeRandom:
     def IS_CHANGED(cls, level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
                    role_mode="不指定", role_name="", role_works="",
                    quality_prefix="", artist_on=False, negative_on=True, extra_body="",
-                   quality_on=True, scene_mode=_SCENE_LABELS[0], template_override=""):
-        if int(seed) < 0 and not str(template_override or "").strip():
+                   quality_on=True, scene_mode=_SCENE_LABELS[0], template_override="",
+                   random_each_run=True):
+        if not str(template_override or "").strip() and (int(seed) < 0 or bool(random_each_run)):
             return f"rand:{time.time_ns()}"
         raw = "|".join(str(x) for x in (level, seed, tag_cap, base_prob, slot_weights,
                                         role_mode, role_name, role_works, quality_prefix,
                                         artist_on, negative_on, extra_body, quality_on,
-                                        scene_mode, template_override))
+                                        scene_mode, template_override, random_each_run))
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
     def run(self, level, seed, tag_cap, base_prob, slot_weights, role_mode,
             role_name, role_works, quality_prefix, artist_on, negative_on, extra_body,
-            quality_on=True, scene_mode=_SCENE_LABELS[0], template_override=""):
+            quality_on=True, scene_mode=_SCENE_LABELS[0], template_override="",
+            random_each_run=True):
         key = _KEY_OF_LABEL.get(level, level)
         if key not in LEVEL_NUM:
             key = "sfw"
+        use_seed = -1 if (bool(random_each_run) and not str(template_override or "").strip()) else int(seed)
         res = generate(
             level=key,
-            seed=int(seed),
+            seed=use_seed,
             tag_cap=int(tag_cap),
             base_prob=float(base_prob),
             slot_weights=slot_weights,
@@ -104,7 +109,7 @@ class PromptForgeRandom:
 
 
 NODE_CLASS_MAPPINGS = {"PromptForgeRandom": PromptForgeRandom}
-NODE_DISPLAY_NAME_MAPPINGS = {"PromptForgeRandom": "Prompt Forge 随机提示词 v5 工作台"}
+NODE_DISPLAY_NAME_MAPPINGS = {"PromptForgeRandom": "Prompt Forge 随机提示词（中文）"}
 
 WEB_DIRECTORY = "./web"
 
@@ -192,4 +197,5 @@ except Exception:  # 非 ComfyUI 环境（单元测试）下跳过路由注册
     pass
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "__version__", "WEB_DIRECTORY"]
+
 
