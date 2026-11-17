@@ -482,9 +482,14 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     # 全裸时清空服装：`completely nude` 和 `white nurse dress` 同时进正文，
     # 模型只能折中 —— 画一条布带"既算穿又算没穿"，这就是用户看到的胸前遮挡。
     # 保留袜子与配饰（only socks 配全裸是合法画风），其余服装一律删。
+    #
+    # ⚠️ `character` 槽也要清：角色节点/左侧连线喂进来的 role_prompt 里
+    #    带着角色的整套服装（white shirt / skirt / school uniform），
+    #    它们走的是 character 槽而不是 clothing 槽 ——
+    #    只清 clothing 的话，全裸和这身水手服照样打架（v0.1.12 的漏口）。
     if any(str(t.get("en") or "").strip().lower() in NUDE_TAGS
            for t in chosen.get("nsfw", [])):
-        for slot in ("clothing", "accessory"):
+        for slot in ("clothing", "accessory", "character"):
             chosen[slot] = [t for t in chosen.get(slot, [])
                             if not _GARMENT.search(t["en"]) or _HOSIERY.search(t["en"])]
 
@@ -729,6 +734,14 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
                              len(ordered))
     for i, (en, _) in enumerate(char_tags):
         ordered.insert(first_non_subject + i, ("character", en))
+
+    # 全裸时把角色自带的那身衣服也清掉。
+    # scenes.build 只清场景包自己的 clothing，管不到这里 —— 角色服装是场景拼完之后
+    # 才插进来的，所以「completely nude + 水手服」会从这条路漏出去（用户 2026-11-17 报的就是它）。
+    if {e for _, e in ordered} & NUDE_TAGS:
+        ordered = [(s, e) for s, e in ordered
+                   if not (s in ("clothing", "accessory", "character")
+                           and _GARMENT.search(e) and not _HOSIERY.search(e))]
 
     chosen = {}
     for slot, en in ordered:
