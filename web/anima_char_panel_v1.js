@@ -5,6 +5,7 @@ const acFetch = (u, opt) => (globalThis.__acFetch ? globalThis.__acFetch(u, opt)
    选人写回节点 / 新增编辑删除角色 / 上传预览图 / 导入导出
 */
 const BATCH = 60;
+const UI_KEY = "pf_char_ui_v1";   // 记住上次的分类与作品筛选
 const LEVEL_NAMES = ["全年龄", "擦边", "成人"];
 const AP_KEYS = [
   ["hair_color", "发色"], ["hair_style", "发型"], ["eyes", "瞳色"],
@@ -38,6 +39,14 @@ function toast(msg, ok = true) {
 function debounce(fn, ms) {
   let h = 0;
   return function () { clearTimeout(h); h = setTimeout(() => fn.apply(this, arguments), ms); };
+}
+function loadUi() {
+  try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch { return {}; }
+}
+function saveUi() {
+  try {
+    localStorage.setItem(UI_KEY, JSON.stringify({ tab: st.tab, work: st.work }));
+  } catch {}
 }
 function thumbUrl(tag) {
   return `/anima_char/thumb/${encodeURIComponent(tag)}`;
@@ -351,7 +360,7 @@ function renderWorks() {
     const row = el("div", "workrow" + (st.work === id ? " on" : ""));
     row.appendChild(el("span", "wn", label));
     row.appendChild(el("span", "wc", String(count)));
-    row.onclick = () => { st.work = id; st.shown = BATCH; renderWorks(); renderCards(); };
+    row.onclick = () => { st.work = id; st.shown = BATCH; saveUi(); renderWorks(); renderCards(); };
     box.appendChild(row);
   };
   const total = (st.lib?.characters || []).length;
@@ -691,7 +700,7 @@ function openPanel(node) {
       t.dataset.k = k;
       t.appendChild(el("span", "nn", label));
       t.appendChild(el("span", "n", "0"));
-      t.onclick = () => { st.tab = k; renderTabs(); resetList(); };
+      t.onclick = () => { st.tab = k; saveUi(); renderTabs(); resetList(); };
       nav.appendChild(t);
     });
   side.appendChild(nav);
@@ -739,7 +748,14 @@ function openPanel(node) {
   panel.keyHandler = keyHandler;
   window.addEventListener("keydown", keyHandler, true);
 
-  const fillWorks = () => { renderWorks(); };
+  const fillWorks = () => {
+    // 记住的作品可能已经不在了（用户删了自定义角色），回落到「全部」
+    if (st.work !== "all" && !(st.works || []).some((w) => w.id === st.work)) {
+      st.work = "all";
+      saveUi();
+    }
+    renderWorks();
+  };
 
   Promise.all([loadLib(), loadState()]).then(() => {
     if (!panel) return;

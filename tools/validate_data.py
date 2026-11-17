@@ -102,7 +102,7 @@ def check_templates(bundle_ids):
         else:
             seen_id.add(tid)
         idx = it.get("index")
-        if not isinstance(idx, int) or not (1 <= idx <= EXPECT_TEMPLATES // 9):
+        if not isinstance(idx, int) or not (1 <= idx <= EXPECT_TEMPLATES):
             err(f"模板 {tid} 的 index 越界: {idx}")
         b = it.get("bundle")
         if b not in bundle_ids:
@@ -168,6 +168,25 @@ def check_dress_logic():
     return bad
 
 
+def check_template_index_unique():
+    """模板序号全站唯一 —— 用户在面板里靠「第 N 套」定位，重复就没法指认。"""
+    seen = {}
+    total = 0
+    for fname in ("templates_ui.json", "templates_v6.json"):
+        path = os.path.join(DATA, fname)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            for it in json.load(f):
+                total += 1
+                idx = it.get("index")
+                if idx in seen:
+                    err(f"模板序号重复：#{idx}（{seen[idx]} 与 {it.get('id')}）")
+                else:
+                    seen[idx] = it.get("id")
+    return total, len(seen)
+
+
 def check_v6_templates():
     """V6 搬来的场景搭配：id 唯一、档位合法、不含男性词、prompt 非空。"""
     path = os.path.join(DATA, "templates_v6.json")
@@ -214,6 +233,9 @@ def main():
     n_v6 = check_v6_templates()
     n_extra = check_extra_characters()
     n_conf = check_dress_logic()
+    n_idx, n_uniq = check_template_index_unique()
+    if n_uniq != n_idx:
+        err(f"模板序号 {n_uniq} 个唯一 / 共 {n_idx} 套")
     check_tag_flags()
 
     if errors:
@@ -223,7 +245,7 @@ def main():
         return 1
     print(f"校验通过：{EXPECT_CATS} 分类 / {n_tags} 词条 / {len(bundle_ids)} 场景包 / "
           f"{n_tpl} 自产模板 + {n_v6} 套 V6 场景搭配 + {n_extra} 补充角色"
-          f"（穿衣冲突 {n_conf} 套）")
+          f"（穿衣冲突 {n_conf} 套，序号唯一 {n_uniq}/{n_idx}）")
     return 0
 
 

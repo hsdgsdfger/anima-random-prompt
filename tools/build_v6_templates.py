@@ -84,8 +84,15 @@ def main():
     with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
 
+    # 序号接在自产模板之后，全站唯一（用户在面板里报「第 N 套」才定位得到）
+    base = 1800
+    try:
+        with open(os.path.join(DATA, "templates_ui.json"), encoding="utf-8") as f:
+            base = len(json.load(f))
+    except Exception:
+        pass
     scenes = raw.get("scenes") or []
-    items, idx = [], 1000
+    items, idx = [], base
     dropped_sfw = dropped_male = dropped_group = 0
     MALE = re.compile(r"\b(1boy|2boys|3boys|male)\b", re.I)
     for sc in scenes:

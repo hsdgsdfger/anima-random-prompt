@@ -36,14 +36,25 @@ def _load_raw():
         return json.load(f)
 
 
-def _load_extra():
+def _read_extra_file(path):
     try:
-        with open(EXTRA_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             items = json.load(f)
     except Exception:
         return []
+    return items if isinstance(items, list) else []
+
+
+def _load_extra():
+    """出厂补充角色 + 用户自己的补充角色（同 tag 时用户的覆盖出厂的）。
+
+    data/ 里的东西会被 git pull 更新；userdata/ 已被 gitignore，
+    用户改了不会被覆盖 —— 用户 2026-11-17 要求分离。
+    """
+    items = _read_extra_file(EXTRA_PATH)
+    items += _read_extra_file(os.path.join(S.USER_DIR, "characters_extra.json"))
     out = []
-    for c in items if isinstance(items, list) else []:
+    for c in items:
         if not isinstance(c, dict) or not str(c.get("tag") or "").strip():
             continue
         c = dict(c)
@@ -51,7 +62,11 @@ def _load_extra():
         c.setdefault("appearance", {})
         c.setdefault("outfits", [])
         out.append(c)
-    return out
+    # 同 tag 后出现的（用户的）覆盖前面的（出厂的）
+    merged = {}
+    for c in out:
+        merged[c["tag"]] = c
+    return list(merged.values())
 
 
 def library():
@@ -82,16 +97,24 @@ def invalidate():
 
 
 def work_zh_map():
-    """作品中文名映射（data/work_zh.json），缺文件时返回空表。"""
+    """作品中文名映射：出厂表 + 用户覆盖表（userdata/work_zh.json 优先）。"""
     if "work_zh" not in _CACHE:
-        try:
-            with open(WORK_ZH_PATH, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            _CACHE["work_zh"] = {str(k).strip().lower(): str(v).strip()
-                                 for k, v in raw.items()
-                                 if not str(k).startswith("_") and str(v).strip()}
-        except Exception:
-            _CACHE["work_zh"] = {}
+        merged = {}
+        for path in (WORK_ZH_PATH, os.path.join(S.USER_DIR, "work_zh.json")):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(raw, dict):
+                continue
+            for k, v in raw.items():
+                k = str(k).strip().lower()
+                v = str(v).strip()
+                if k.startswith("_") or not v:
+                    continue
+                merged[k] = v
+        _CACHE["work_zh"] = merged
     return _CACHE["work_zh"]
 
 

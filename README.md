@@ -137,7 +137,8 @@ git clone https://github.com/hsdgsdfger/anima-random-prompt.git Comfyui-Prompt-F
 - **底部条**：当前角色的缩略图、身份、外观摘要、服装下拉、复制与应用按钮
 - 卡片四键：`☆` 收藏、`＋` 进勾选池、`⊘` 拉黑（随机永不出现）、`✎` 编辑
 - 点卡片本体 = 选人，节点自动切「指定」并写入 `role_name`
-- 勾选池每个角色带权重（0.1–20），配「多选加权」模式
+- 勾选池页签里每张卡带权重输入（0.1–20），配「多选加权」模式
+- 面板记住上次的分类与作品筛选（存 `pf_char_ui_v1`）
 - 可新建原创角色、改外观、写服装套装、上传自己的预览图（自动转 webp）
 - 导入导出收藏与排除名单
 
@@ -157,8 +158,8 @@ git clone https://github.com/hsdgsdfger/anima-random-prompt.git Comfyui-Prompt-F
 | --- | --- |
 | `data/tags.json` | 25 分类 / 2956 条词条（589 KB） |
 | `data/scenes.json` | 45 个场景包 + 互斥标记（72 KB） |
-| `data/templates_ui.json` | 1800 套自产模板（1.16 MB） |
-| `data/templates_v6.json` | 137 套 V6 场景搭配（跨槽位配方 + 姿势，可重建） |
+| `data/templates_ui.json` | 1800 套自产模板（1.16 MB，序号 1–1800） |
+| `data/templates_v6.json` | 137 套 V6 场景搭配（序号 1801–1937，可重建） |
 | `data/characters_extra.json` | 39 个补充角色（米哈游补齐，可重建） |
 | `data/work_zh.json` | 250 条作品名中文映射，覆盖 92% 角色 |
 | `data/tag_flags.json` | 418 条 `tag → 场景标记` 索引（18 KB，可重建） |
@@ -255,6 +256,20 @@ python tools/fetch_thumbs.py --only mihoyo
 - `add_mihoyo.py` 补米哈游四款游戏缺的女性角色，已有 tag 自动跳过，可反复跑。
 - `fetch_thumbs.py` 按 tag 去 safebooru 抓预览图（缩略图，jpg，不依赖 Pillow）。
   米哈游那批已抓到 30/39，剩下 9 个源站没收录，面板显示占位。
+- `verify_triggers.py` 查每个角色的 trigger tag 在 safebooru 上是否真的存在。
+
+### 数据分层（重要）
+
+| 位置 | 归谁 | git pull 会覆盖吗 |
+| --- | --- | --- |
+| `data/*.json` | 出厂数据 | **会**，这是随版本更新的 |
+| `userdata/characters_extra.json` | 你自己的补充角色 | 不会 |
+| `userdata/work_zh.json` | 你改的作品中文名 | 不会 |
+| `userdata/templates_extra.json` | 你自建的模板 | 不会 |
+| `userdata/state.json` | 收藏 / 权重 / 排除 | 不会 |
+| `userdata/prompt_forge.json` | 档位矩阵 / any 配比 | 不会 |
+
+想改出厂数据：把它从 `data/` 复制到 `userdata/` 再改，同名条目你的优先。
 - `fix_template_conflicts.py` 修穿衣逻辑：全裸不穿衣、上空不穿上装、裙裤不同穿。
   `validate_data.py` 会调同一套规则，重跑生成器后立刻能查出复发。
 

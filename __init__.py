@@ -20,7 +20,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
@@ -403,6 +403,15 @@ try:
         if data is None:
             # 自产模板 + 从 Anima Wardrobe V6 搬来的场景搭配（src="v6"）
             data = _read_json("templates_ui.json", []) + _read_json("templates_v6.json", [])
+            # 用户自建模板放 userdata/，git pull 不会覆盖
+            user_tpl = os.path.join(_char_state.USER_DIR, "templates_extra.json")
+            try:
+                with open(user_tpl, "r", encoding="utf-8") as f:
+                    extra = json.load(f)
+                if isinstance(extra, list):
+                    data = data + [x for x in extra if isinstance(x, dict) and x.get("prompt")]
+            except Exception:
+                pass
             _UI_CACHE["data"] = data
         src = (request.query.get("src") or "").strip().lower()
         items = data
