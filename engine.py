@@ -14,6 +14,11 @@ import os
 import random
 import re
 
+try:                                        # 包内正常路径
+    from .wordlists import regex as _wl_re
+except ImportError:                         # 单独跑脚本时的兜底
+    from wordlists import regex as _wl_re
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(HERE, "data", "tags.json")
 
@@ -89,35 +94,17 @@ COLORS = re.compile(
 NSFW_DENY = re.compile(
     r"\b(penis|penises|testicles|male|1boy|boys|yaoi|crotch|groin)\b", re.I)
 
-# ---------------- 全裸 / 穿衣互斥 ----------------
-# 用户 2026-11-17 报「胸前总有两条带子遮挡、档位不管用」。
-# 根因：`completely nude` 与 `white nurse dress` 这类服装同时进正文，
-# 模型收到矛盾指令，只能折中画一条布带 —— 既算穿又算没穿。
+# ---------------- 词表（统一维护在 data/garment_words.json） ----------------
+# 以前 engine.py 与 scenes.py 各写一份，补词要改两处，容易漂移。
+_GARMENT = _wl_re("garment")
+_HOSIERY = _wl_re("hosiery")
+_NUDE_RE = _wl_re("nude")
+_NSFW_CLOTH = _wl_re("nsfw_cloth")
+_APPEAR_HINT = _wl_re("appear")
+_CLOTH_STATE = _wl_re("cloth_state")
+# 兼容旧代码里 `t["en"] in NUDE_TAGS` 的写法
 NUDE_TAGS = {"completely nude", "fully nude", "nude", "naked",
              "nude with accessories only"}
-_GARMENT = re.compile(
-    r"\b(skirt|dress|shirt|t-shirt|blouse|sweater|hoodie|jacket|coat|uniform|"
-    r"jeans|pants|trousers|shorts|slacks|leggings|kimono|yukata|jinbei|qipao|"
-    r"hanfu|sari|robe|bathrobe|pajamas|nightgown|leotard|bodysuit|swimsuit|"
-    r"bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|apron|"
-    r"cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler|"
-    r"clothes|outfit|\w*suit|\w*sleeves?|\w*coat|knitwear|swimwear|wear)\b",
-    re.I)
-_HOSIERY = re.compile(
-    r"\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|"
-    r"garter straps?|garter belt)\b", re.I)
-
-# 低档位要剔除的外部服装：泳装 / 内衣。leotard / bodysuit 不在此列
-# （2B、明日香这类是战斗服，sfw 档穿它们不算越档）。
-_NSFW_CLOTH = re.compile(
-    r"\b(bikini|swimsuit|micro bikini|sling|string bikini|lingerie|underwear|"
-    r"panties|bra|pasties|see-through|transparent|topless|nude|naked|"
-    r"sideboob|underboob|swimwear)\b", re.I)
-
-# 外部角色词里"算不算带了外观"：发/瞳/皮肤/身材类
-_APPEAR_HINT = re.compile(
-    r"\b(hair|eyes|eyebrows|eyelashes|skin|breasts?|chest|waist|hips|thighs|"
-    r"figure|freckles|mole|horn|ears|tail|wings|halo)\b", re.I)
 
 RATING_TAGS = {0: ["safe"], 1: ["sensitive"], 2: ["nsfw"], 3: ["nsfw", "explicit"], 4: ["nsfw", "explicit"]}
 NSFW_COUNT = {0: 0, 1: 0, 2: 1, 3: 2, 4: 3, 99: 2}
@@ -300,7 +287,7 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
              role_mode="none", role_name="", role_works="", quality_prefix="masterpiece, best quality",
              artist_on=False, extra_body="", negative_on=True, scene_mode="scene",
              override_text="", override_mode="direct", role_prompt="", settings=None,
-             appearance_follow=True, outfit_follow=False):
+             appearance_follow=True, outfit_follow=False, scene_hint=""):
     sel_key = str(level)
     if sel_key not in LEVEL_NUM:
         sel_key = "sfw"
@@ -370,7 +357,7 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     if ext_rejected:
         head.append(f"已剔除 {ext_rejected} 个不适用词（男性词 / 低档位泳装内衣）")
     if ext_kept:
-        head.append("外部角色: 未按档位过滤")
+        head.append("外部角色: 服装按档位过滤")
     if follow:
         head.append("让位槽位: " + " / ".join(
             s["label"] for s in SLOTS if s["key"] in follow) + "（交给角色输入）")
@@ -400,7 +387,8 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
                               artist_on, extra_body, negative_on, seed,
                               ext_subjects, ext_others, ext_rejected,
                               self_appear=("hair" in follow),
-                              clothing_follow=("clothing" in follow))
+                              clothing_follow=("clothing" in follow),
+                              scene_hint=scene_hint)
         if res:
             return res
         # 场景拼不出来（几乎不会发生）就退回自由随机，保证节点永远有输出
@@ -532,11 +520,14 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     #    带着角色的整套服装（white shirt / skirt / school uniform），
     #    它们走的是 character 槽而不是 clothing 槽 ——
     #    只清 clothing 的话，全裸和这身水手服照样打架（v0.1.12 的漏口）。
-    if any(str(t.get("en") or "").strip().lower() in NUDE_TAGS
+    if any(_NUDE_RE.match(str(t.get("en") or "").strip())
            for t in chosen.get("nsfw", [])):
         for slot in ("clothing", "accessory", "character"):
             chosen[slot] = [t for t in chosen.get(slot, [])
                             if not _GARMENT.search(t["en"]) or _HOSIERY.search(t["en"])]
+        # nsfw 槽里的「湿衣服 / 掀衣服」和全裸同样打架
+        chosen["nsfw"] = [t for t in chosen.get("nsfw", [])
+                          if not _CLOTH_STATE.search(t["en"])]
 
     # 评级词
     for r in RATING_TAGS.get(tv, []):
@@ -696,7 +687,8 @@ def _generate_mixed(sel_key, sel_num, tv, basis, head, override, rng, tag_cap, b
                     negative_on=negative_on, scene_mode=scene_mode,
                     override_text="", override_mode="direct",
                     role_prompt=", ".join(ext_kept), settings=inner_cfg,
-                    appearance_follow=appearance_follow, outfit_follow=outfit_follow)
+                    appearance_follow=appearance_follow, outfit_follow=outfit_follow,
+                    scene_hint=override)
 
     body_tags = [x.strip() for x in str(body.get("positive", "")).split(",") if x.strip()]
     merged = list(locked)
@@ -729,7 +721,8 @@ def _generate_mixed(sel_key, sel_num, tv, basis, head, override, rng, tag_cap, b
 def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, weights,
                     role_mode, role_name, role_works, quality_prefix, artist_on,
                     extra_body, negative_on, seed, ext_subjects=None, ext_others=None,
-                    ext_rejected=0, self_appear=True, clothing_follow=False):
+                    ext_rejected=0, self_appear=True, clothing_follow=False,
+                    scene_hint=""):
     """场景成套路径：环境/季节/服装/道具/姿势绑在一个包里，出来的串自带现实逻辑。"""
     try:
         from . import scenes
@@ -752,7 +745,8 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
     for _ in range(12):
         items, bundle_id = scenes.build(tv, rng, weights, base_prob,
                                         monster=monster_on,
-                                        has_character=has_character)
+                                        has_character=has_character,
+                                        hint=scene_hint)
         if items:
             break
     if not items:
@@ -797,10 +791,11 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
     # 全裸时把角色自带的那身衣服也清掉。
     # scenes.build 只清场景包自己的 clothing，管不到这里 —— 角色服装是场景拼完之后
     # 才插进来的，所以「completely nude + 水手服」会从这条路漏出去（用户 2026-11-17 报的就是它）。
-    if {e for _, e in ordered} & NUDE_TAGS:
+    if any(_NUDE_RE.match(e) for _, e in ordered):
         ordered = [(s, e) for s, e in ordered
                    if not (s in ("clothing", "accessory", "character")
-                           and _GARMENT.search(e) and not _HOSIERY.search(e))]
+                           and _GARMENT.search(e) and not _HOSIERY.search(e))
+                   and not (s == "nsfw" and _CLOTH_STATE.search(e))]
 
     chosen = {}
     for slot, en in ordered:

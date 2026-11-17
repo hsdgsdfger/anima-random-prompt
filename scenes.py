@@ -9,6 +9,11 @@ import json
 import os
 import re
 
+try:
+    from .wordlists import regex as _wl_re, words as _wl_words
+except ImportError:
+    from wordlists import regex as _wl_re, words as _wl_words
+
 _DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _SC = None
 _LV = None
@@ -24,17 +29,10 @@ WINTER = re.compile(
 RAIN = re.compile(r"\b(rain|light rain|rainy day|storm|raindrops)\b", re.I)
 
 # 全裸与服装互斥：模型同时看到"全裸"和"护士服"只会画一条布带折中
-GARMENT = re.compile(
-    r"\b(skirt|dress|shirt|t-shirt|blouse|sweater|hoodie|jacket|coat|uniform|"
-    r"jeans|pants|trousers|shorts|slacks|leggings|kimono|yukata|jinbei|qipao|"
-    r"hanfu|sari|robe|bathrobe|pajamas|nightgown|leotard|bodysuit|swimsuit|"
-    r"bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|apron|"
-    r"cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler|"
-    r"clothes|outfit|\w*suit|\w*sleeves?|\w*coat|knitwear|swimwear|wear)\b",
-    re.I)
-HOSIERY = re.compile(
-    r"\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|"
-    r"garter straps?|garter belt)\b", re.I)
+GARMENT = _wl_re("garment")
+HOSIERY = _wl_re("hosiery")
+NUDE_RE = _wl_re("nude")
+CLOTH_STATE = _wl_re("cloth_state")
 
 # 构图里这些是"整张图结构词"，单条提示词里不能混
 COMP_SKIP = ("solo", "duo", "group", "multiple views", "character sheet",
@@ -46,11 +44,44 @@ CORE = ("hair", "hair_color", "face", "eye_color", "body", "clothing", "accessor
 
 # 现实中必须换装的场景：泳池 / 海边 / 浴场 / 温泉 / 淋浴。
 # 这类场景穿常服在画面上不成立，所以服装由场景决定，角色自带的那套让位。
-SPECIAL_SCENE = re.compile(
-    r"pool|beach|onsen|bath|shower|swim|sea_|ocean|lake|river|water", re.I)
+SPECIAL_SCENE = _wl_re("special_scene")
 
 # 数据里 water=True 但实际穿常服的场景：水族馆是「参观」，不是下水
-NOT_SPECIAL = {"aquarium_day"}
+NOT_SPECIAL = _wl_words("not_special_scene")
+
+
+# ---------------- 锁定词与场景的一致性 ----------------
+# 混合模式下用户写的锁定词（"cherry blossoms, spring"）和随机抽到的场景
+# 可能矛盾（抽到温泉）。这里不硬性拒绝，只做「优先挑不冲突的」——
+# 过滤后为空就退回全集，保证一定有输出。
+_HINT_WINTER = re.compile(r"\b(snow|snowing|snowy|winter|blizzard|ice|frozen)\b", re.I)
+_HINT_SPRING = re.compile(r"\b(cherry blossoms?|sakura|spring|hanami|flower field)\b", re.I)
+_HINT_WATER = re.compile(r"\b(beach|ocean|sea|pool|swimsuit|bikini|underwater|"
+                        r"waves|seaside|shore)\b", re.I)
+_HINT_INDOOR = re.compile(r"\b(indoor|bedroom|classroom|kitchen|bathroom|library|"
+                          r"cafe|office|room)\b", re.I)
+
+
+def hint_conflict(bundle, hint):
+    """锁定词主张的环境和这个场景包是否明显打架。"""
+    if not hint:
+        return False
+    env = " ".join(bundle.get("env") or [])
+    season = " ".join(bundle.get("season") or [])
+    blob = (env + " " + season).lower()
+    if _HINT_WINTER.search(hint):
+        # 要雪景却给了夏天/海边
+        if not bundle.get("cold") and not _HINT_WINTER.search(blob):
+            return True
+    if _HINT_SPRING.search(hint):
+        if bundle.get("cold") or _HINT_WINTER.search(blob):
+            return True
+    if _HINT_WATER.search(hint):
+        if not bundle.get("water"):
+            return True
+    if _HINT_INDOOR.search(hint) and not bundle.get("indoor"):
+        return True
+    return False
 
 
 _SPECIAL_CACHE = {}
@@ -66,8 +97,13 @@ def is_special_scene(bundle_id):
         return False
     sc, _, _ = _load()
     b = next((x for x in sc["bundles"] if x["id"] == bundle_id), None)
-    val = (bool(b.get("water")) or bool(SPECIAL_SCENE.search(key))) if b \
-        else bool(SPECIAL_SCENE.search(key))
+    # 优先读数据标记：加新场景只要在 scenes.json 里写 needs_outfit，
+    # 不用回来改正则（aquarium_day 那次误判就是猜出来的）。
+    if b is not None and "needs_outfit" in b:
+        val = bool(b["needs_outfit"])
+    else:
+        val = (bool(b.get("water")) or bool(SPECIAL_SCENE.search(key))) if b \
+            else bool(SPECIAL_SCENE.search(key))
     _SPECIAL_CACHE[key] = val
     return val
 
@@ -145,8 +181,12 @@ class _Builder:
         return [t["en"] for t in _CATS.get(name, []) if int(t["lv"]) <= self.cap]
 
 
-def build(cap, rng, weights=None, base_prob=0.65, monster=False, has_character=False):
-    """拼一套；不合规返回 (None, None)，由调用方重试。"""
+def build(cap, rng, weights=None, base_prob=0.65, monster=False, has_character=False,
+          hint=""):
+    """拼一套；不合规返回 (None, None)，由调用方重试。
+
+    `hint` 是锁定词原文：给了就优先挑不与之矛盾的场景包（挑不到就退回全集）。
+    """
     sc, _, _ = _load()
     cap = 99 if int(cap) >= 99 else int(cap)
     bundles = [b for b in sc["bundles"]
@@ -154,6 +194,10 @@ def build(cap, rng, weights=None, base_prob=0.65, monster=False, has_character=F
                                 ) or b["nsfw"].get("4")))]
     if monster:
         bundles = [b for b in bundles if b["id"] in sc["monster_bundles"]]
+    if hint:
+        keep = [b for b in bundles if not hint_conflict(b, hint)]
+        if keep and len(keep) < len(bundles):
+            bundles = keep          # 有更贴的候选就先缩小范围，但不强求
     if not bundles:
         return None, None
 
@@ -290,12 +334,12 @@ def build(cap, rng, weights=None, base_prob=0.65, monster=False, has_character=F
                     and b.add("nsfw", t):
                 have += 1
         # 全裸就别再叠"掀衣服"
-        tags_set = {e for _, e in b.items}
-        if tags_set & {"completely nude", "nude", "naked", "partially nude"}:
+        if any(NUDE_RE.match(e) for _, e in b.items):
             clash = {"shirt lift", "skirt lift", "dress lift", "open clothes",
                      "clothing aside", "up skirt", "bra pull", "clothes lift",
                      "underwear only", "topless", "bottomless", "naked towel"}
-            b.items = [(s, e) for s, e in b.items if e not in clash]
+            b.items = [(s, e) for s, e in b.items
+                       if e not in clash and not CLOTH_STATE.search(e)]
             # 全裸时连衣服一起删：`completely nude` 与 `white nurse dress` 并存
             # 会让模型折中画一条布带（用户 2026-11-17 报的「胸前总被挡住」）。
             # 袜子与配饰保留 —— `only socks` 配全裸是合法画风。

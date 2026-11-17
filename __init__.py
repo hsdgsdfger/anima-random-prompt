@@ -21,7 +21,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.1.15"
+__version__ = "0.1.16"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
@@ -31,6 +31,26 @@ _ROLE_LABELS = ["不指定", "随机", "指定"]
 _ROLE_KEYS = {"不指定": "none", "随机": "random", "指定": "specified"}
 _SCENE_LABELS = ["场景成套 · 现实逻辑", "自由随机 · 全库乱抽"]
 _SCENE_KEYS = {_SCENE_LABELS[0]: "scene", _SCENE_LABELS[1]: "free", "scene": "scene", "free": "free"}
+def _write_png_meta(extra_pnginfo, unique_id, key, payload):
+    """把本次出词的完整信息塞进 extra_pnginfo，保存节点会写进 PNG 的 tEXt 块。
+
+    为什么要有：出问题时要能回答「这张图到底用了什么提示词」。
+    之前只能靠 API 参数反推，角色节点喂进来的服装、档位抽样结果全都看不到。
+
+    任何异常都吞掉 —— 元数据写不进去是小事，出图挂掉是大事。
+    """
+    if not isinstance(extra_pnginfo, dict):
+        return
+    try:
+        store = extra_pnginfo.get(key)
+        if not isinstance(store, dict):
+            store = {}
+            extra_pnginfo[key] = store
+        store[str(unique_id if unique_id is not None else "0")] = payload
+    except Exception:
+        pass
+
+
 _OVERRIDE_LABELS = ["直通", "混合"]
 _OVERRIDE_KEYS = {"直通": "direct", "混合": "mixed", "direct": "direct", "mixed": "mixed"}
 
@@ -85,6 +105,12 @@ class PromptForgeRandom:
                 "outfit_follow": ("BOOLEAN", {"default": False,
                                               "tooltip": "角色输入里带服装时，服装与配饰不再随机（交给角色输入）；角色没带服装则照常随机。泳池/海边/温泉这类场景仍由场景决定服装"}),
             },
+            # 不占控件位，ComfyUI 会把这两个塞给 run()：
+            # 出图后把实际用的提示词写进 PNG，排查「这张为什么这样」时直接读图
+            "hidden": {
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
+            },
         }
 
     RETURN_TYPES = ("STRING", "STRING")
@@ -124,7 +150,8 @@ class PromptForgeRandom:
             role_name, role_works, quality_prefix, artist_on, negative_on, extra_body,
             quality_on=True, scene_mode=_SCENE_LABELS[0], template_override="",
             random_each_run=True, override_mode="直通", role_prompt="",
-            appearance_follow=True, outfit_follow=False):
+            appearance_follow=True, outfit_follow=False,
+            extra_pnginfo=None, unique_id=None):
         key = _KEY_OF_LABEL.get(level, level)
         if key not in LEVEL_NUM:
             key = "sfw"
@@ -156,6 +183,24 @@ class PromptForgeRandom:
             print(f"[PromptForge] {res['level']} | {res['report']}".replace("\n", " | "))
         except Exception:
             pass
+        _write_png_meta(extra_pnginfo, unique_id, "prompt_forge", {
+            "version": __version__,
+            "positive": res["positive"],
+            "negative": res["negative"],
+            "level": res["level"],
+            "target_level": res.get("target_level"),
+            "seed": use_seed,
+            "scene_mode": _SCENE_KEYS.get(scene_mode, "scene"),
+            "bundle": res.get("bundle"),
+            "report": res["report"],
+            "params": {"tag_cap": int(tag_cap), "base_prob": float(base_prob),
+                       "slot_weights": slot_weights, "role_mode": role_mode,
+                       "role_name": role_name, "role_works": role_works,
+                       "override_mode": override_mode,
+                       "appearance_follow": bool(appearance_follow),
+                       "outfit_follow": bool(outfit_follow),
+                       "role_prompt": role_prompt},
+        })
         return (res["positive"], res["negative"])
 
 
@@ -195,6 +240,10 @@ class AnimaCharacterPicker:
                 "random_each_run": ("BOOLEAN", {"default": True,
                                                 "tooltip": "每次运行都重新抽人（忽略固定种子）"}),
             },
+            "hidden": {
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
+            },
         }
 
     RETURN_TYPES = ("STRING", "STRING")
@@ -220,7 +269,8 @@ class AnimaCharacterPicker:
 
     def run(self, mode="随机", seed=-1, role_name="", work_filter="",
             include_appearance=True, include_outfit=False,
-            outfit_id="", extra_prompt="", random_each_run=True):
+            outfit_id="", extra_prompt="", random_each_run=True,
+            extra_pnginfo=None, unique_id=None):
         use_seed = -1 if bool(random_each_run) else int(seed)
         st = _char_state.load_state()
         rec, why = _char_picker.select(mode=mode, seed=use_seed, role_name=role_name,
@@ -254,6 +304,18 @@ class AnimaCharacterPicker:
                                 if include_outfit else "关") + f" | seed {use_seed}")
         except Exception:
             pass
+        _write_png_meta(extra_pnginfo, unique_id, "character_picker", {
+            "version": __version__,
+            "tag": rec["tag"],
+            "zh": rec.get("zh") or "",
+            "work": rec.get("work") or "",
+            "mode": mode,
+            "seed": use_seed,
+            "appearance": seg.get("appearance") or "",
+            "outfit": seg.get("outfit") or "",
+            "outfit_name": seg.get("outfit_name") or "",
+            "positive": positive,
+        })
         return (positive, CHAR_BASE_NEGATIVE)
 
 
@@ -556,10 +618,57 @@ try:
             _user_path("custom_characters.json"),
         )
 
+    def _char_index_payload():
+        """精简索引：只够画卡片墙，不含 appearance / outfits。
+
+        完整库 1.1 MB，索引约 400 KB —— 前端要先把卡片画出来时用它，
+        详细外观等点开某个角色再单独取。
+        """
+        lib = _char_picker.library()
+        chars = []
+        for c in lib["characters"]:
+            chars.append({
+                "tag": c["tag"],
+                "name": c.get("name") or c["tag"],
+                "zh": c.get("zh") or "",
+                "work": c.get("work") or "",
+                "pop": int(c.get("pop") or 0),
+                "thumb": c.get("thumb") or "",
+                "custom": bool(c.get("custom")),
+            })
+        return {"works": _char_picker.works_payload(), "characters": chars}
+
     @PromptServer.instance.routes.get("/anima_char/library")
     async def _char_library(request):
         # 序列化完就把 1 200 KB 的大字典丢掉，进程里只留压缩后的字节
         return _json_resp(request, "char|library", _char_library_payload, _char_stamp())
+
+    @PromptServer.instance.routes.get("/anima_char/index")
+    async def _char_index(request):
+        return _json_resp(request, "char|index", _char_index_payload, _char_stamp())
+
+    @PromptServer.instance.routes.get("/anima_char/char/{tag}")
+    async def _char_detail(request):
+        from aiohttp import web
+        tag = str(request.match_info.get("tag") or "").strip().lower()
+        rec = _char_picker.library()["by_tag"].get(tag)
+        if not rec:
+            return web.json_response({"ok": False, "error": "角色不存在"}, status=404)
+        return web.json_response({"ok": True, "character": {
+            "tag": rec["tag"],
+            "name": rec.get("name") or rec["tag"],
+            "zh": rec.get("zh") or "",
+            "work": rec.get("work") or "",
+            "trigger": rec.get("trigger") or rec["tag"],
+            "pop": int(rec.get("pop") or 0),
+            "thumb": rec.get("thumb") or "",
+            "custom": bool(rec.get("custom")),
+            "appearance": rec.get("appearance") or {},
+            "outfits": [{"id": o.get("id"), "zh": o.get("zh") or "",
+                         "level": int(o.get("level") or 0),
+                         "tags": o.get("tags") or []}
+                        for o in (rec.get("outfits") or [])],
+        }})
 
     @PromptServer.instance.routes.get("/anima_char/state")
     async def _char_state_get(request):
@@ -646,7 +755,8 @@ try:
         _char_picker.invalidate()
         _CHAR_VER[0] += 1
         _THUMB_MAP[0] = None
-        _BODY_CACHE.pop("char|library", None)
+        for _k in ("char|library", "char|index"):
+            _BODY_CACHE.pop(_k, None)
         return web.json_response({"ok": True})
 
     @PromptServer.instance.routes.post("/anima_char/char/delete")
@@ -664,7 +774,8 @@ try:
         _char_picker.invalidate()
         _CHAR_VER[0] += 1
         _THUMB_MAP[0] = None
-        _BODY_CACHE.pop("char|library", None)
+        for _k in ("char|library", "char|index"):
+            _BODY_CACHE.pop(_k, None)
         return web.json_response({"ok": True})
 except Exception as _pf_exc:  # 非 ComfyUI 环境（单元测试）下跳过路由注册
     # 以前这里是静默 pass：一旦某个路由注册失败，后面所有接口都会凭空消失，

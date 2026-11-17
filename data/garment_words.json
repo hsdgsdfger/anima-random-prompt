@@ -1,0 +1,23 @@
+{
+  "_meta": {
+    "schema": "prompt-forge/wordlists@1",
+    "note": "engine.py 与 scenes.py 共用。改完重启 ComfyUI 生效。regular expression 用 Python re 语法，不走 DOTALL。",
+    "updated_at": "2026-11-17"
+  },
+  "garment": "\\b(skirt|dress|shirt|t-shirt|blouse|sweater|hoodie|jacket|coat|uniform|jeans|pants|trousers|shorts|slacks|leggings|kimono|yukata|jinbei|qipao|hanfu|sari|robe|bathrobe|pajamas|nightgown|leotard|bodysuit|swimsuit|bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|apron|cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler|clothes|outfit|\\w*suit|\\w*sleeves?|\\w*coat|knitwear|swimwear|wear)\\b",
+  "hosiery": "\\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|garter straps?|garter belt)\\b",
+  "nude": [
+    "completely nude",
+    "fully nude",
+    "nude",
+    "naked",
+    "nude with accessories only"
+  ],
+  "nsfw_cloth": "\\b(bikini|swimsuit|micro bikini|sling|string bikini|lingerie|underwear|panties|bra|pasties|see-through|transparent|topless|nude|naked|sideboob|underboob|swimwear)\\b",
+  "appear": "\\b(hair|eyes|eyebrows|eyelashes|skin|breasts?|chest|waist|hips|thighs|figure|freckles|mole|horn|ears|tail|wings|halo)\\b",
+  "special_scene": "pool|beach|onsen|bath|shower|swim|sea_|ocean|lake|river|water",
+  "not_special_scene": [
+    "aquarium_day"
+  ],
+  "cloth_state": "\\b(wet clothes|clothes lift|clothing aside|open clothes|dress lift|shirt lift|skirt lift|undressing|panties aside|bra pull|clothes pull)\\b"
+}

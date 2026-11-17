@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""合并版插件的路由冒烟：用假的 PromptServer / aiohttp 跑一遍全部 16 个接口方法。
+"""合并版插件的路由冒烟：用假的 PromptServer / aiohttp 跑一遍全部 18 个接口方法。
 
 不启动 ComfyUI，也不依赖 torch —— 只验证注册、参数、路径安全、写盘。
 用法：python tools/routes_smoke.py
@@ -122,7 +122,8 @@ pf = {"GET": ["/prompt_forge/library", "/prompt_forge/scene_meta", "/prompt_forg
               "/prompt_forge/tag_flags", "/prompt_forge/roll", "/prompt_forge/templates",
               "/prompt_forge/userdata"],
       "POST": ["/prompt_forge/roll", "/prompt_forge/userdata"]}
-cc = {"GET": ["/anima_char/library", "/anima_char/state", "/anima_char/thumb/{tag}"],
+cc = {"GET": ["/anima_char/library", "/anima_char/index", "/anima_char/char/{tag}",
+               "/anima_char/state", "/anima_char/thumb/{tag}"],
       "POST": ["/anima_char/state", "/anima_char/thumb/{tag}",
                "/anima_char/char/save", "/anima_char/char/delete"]}
 want = {(k, p) for k, ps in pf.items() for p in ps} | {(k, p) for k, ps in cc.items() for p in ps}

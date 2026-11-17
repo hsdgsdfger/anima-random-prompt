@@ -97,25 +97,41 @@ def invalidate():
 
 
 def work_zh_map():
-    """作品中文名映射：出厂表 + 用户覆盖表（userdata/work_zh.json 优先）。"""
-    if "work_zh" not in _CACHE:
-        merged = {}
-        for path in (WORK_ZH_PATH, os.path.join(S.USER_DIR, "work_zh.json")):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-            except Exception:
+    """作品中文名映射：出厂表 + 用户覆盖表（userdata/work_zh.json 优先）。
+
+    按两个文件的 (mtime, size) 指纹缓存 —— 以前只在首次读一次，
+    用户改了 userdata/work_zh.json 必须重启才生效。
+    """
+    paths = (WORK_ZH_PATH, os.path.join(S.USER_DIR, "work_zh.json"))
+    stamp = []
+    for p in paths:
+        try:
+            st = os.stat(p)
+            stamp.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            stamp.append(None)
+    stamp = tuple(stamp)
+    cached = _CACHE.get("work_zh")
+    if cached and cached[0] == stamp:
+        return cached[1]
+
+    merged = {}
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        except Exception:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        for k, v in raw.items():
+            k = str(k).strip().lower()
+            v = str(v).strip()
+            if k.startswith("_") or not v:
                 continue
-            if not isinstance(raw, dict):
-                continue
-            for k, v in raw.items():
-                k = str(k).strip().lower()
-                v = str(v).strip()
-                if k.startswith("_") or not v:
-                    continue
-                merged[k] = v
-        _CACHE["work_zh"] = merged
-    return _CACHE["work_zh"]
+            merged[k] = v
+    _CACHE["work_zh"] = (stamp, merged)
+    return merged
 
 
 def works_payload():

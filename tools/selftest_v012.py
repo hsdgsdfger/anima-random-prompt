@@ -8,6 +8,7 @@
 """
 import importlib.util
 import json
+import re
 import os
 import shutil
 import sys
@@ -25,6 +26,9 @@ spec.loader.exec_module(pf)
 
 engine = sys.modules["pf.engine"]
 settings = sys.modules["pf.settings"]
+
+import importlib
+scenes = importlib.import_module("pf.scenes")
 
 fails = []
 
@@ -78,7 +82,7 @@ ts = [t.lower() for t in tags_of(r["positive"])]
 check("角色词出现", "hatsune miku" in ts, r["positive"])
 check("角色词在主体之后", ts.index("hatsune miku") > ts.index("1girl") if "1girl" in ts else True)
 check("report 标外部输入", "外部输入" in r["report"])
-check("report 标未按档位过滤", "未按档位过滤" in r["report"])
+check("report 标服装按档位过滤", "服装按档位过滤" in r["report"])
 
 r = engine.generate(level="sfw", seed=7, role_prompt="1girl, solo, long hair", quality_prefix="")
 ts = [t.lower() for t in tags_of(r["positive"])]
@@ -243,6 +247,62 @@ for lv in ("sfw", "suggestive", "explicit", "hardcore", "extreme", "any"):
         if r["positive"]:
             okc += 1
     check(f"{lv} 50 次全部有输出", okc == 50, str(okc))
+
+# ---------------------------------------------------------------- 服装与场景
+# 2026-11-17 用户报「sfw 出泳装」「胸前总被挡住」，下面是那两次的回归。
+GAR = engine._GARMENT
+SWIM = engine._NSFW_CLOTH
+
+# ① 角色带服装 + 普通场景 → 必须穿角色的那套
+role_cloth = ("firefly (honkai: star rail), silver hair, purple eyes, "
+              "white shirt, skirt, school uniform")
+kept = total = 0
+for i in range(20):
+    r = engine.generate(level="sfw", seed=6000 + i, scene_mode="scene",
+                        role_prompt=role_cloth, appearance_follow=True,
+                        outfit_follow=True, quality_prefix="", settings={})
+    ms = re.search(r"场景: ([^（]+)", r["report"])
+    bid = ms.group(1).strip() if ms else ""
+    if scenes.is_special_scene(bid):
+        continue
+    total += 1
+    if "white shirt" in r["positive"].lower():
+        kept += 1
+check("普通场景保留角色服装", total > 0 and kept == total, f"{kept}/{total}")
+
+# ② 角色 outfit 是泳装时，sfw 档必须剔除
+role_swim = "bay (nikke), long hair, blue eyes, white bikini, bikini, swimsuit"
+leak = 0
+for i in range(15):
+    r = engine.generate(level="sfw", seed=6100 + i, scene_mode="scene",
+                        role_prompt=role_swim, appearance_follow=True,
+                        outfit_follow=True, quality_prefix="", settings={})
+    if SWIM.search(r["positive"]):
+        leak += 1
+check("sfw 档剔除角色泳装", leak == 0, f"{leak}/15")
+
+# ③ 全裸时不能同时穿着整套衣服
+nude_bad = 0
+for i in range(20):
+    r = engine.generate(level="extreme", seed=6200 + i, scene_mode="scene",
+                        role_prompt=role_cloth, appearance_follow=True,
+                        outfit_follow=True, quality_prefix="", settings={})
+    ts = [t.strip().lower() for t in r["positive"].split(",")]
+    if any(engine._NUDE_RE.match(t) for t in ts):
+        if any(GAR.search(t) and not engine._HOSIERY.search(t) for t in ts):
+            nude_bad += 1
+check("全裸时清空服装", nude_bad == 0, f"{nude_bad}/20")
+
+# ④ 锁定词主张的环境和场景不一致时，应该优先挑贴的
+conflict = 0
+for i in range(12):
+    r = engine.generate(level="sfw", seed=6300 + i, scene_mode="scene",
+                        override_text="1girl, solo, snowing, winter, snow",
+                        override_mode="mixed", role_prompt="", quality_prefix="",
+                        settings={})
+    if re.search(r"\b(beach|ocean|summer|swimsuit)\b", r["positive"], re.I):
+        conflict += 1
+check("雪景锁定词不会抽到海边", conflict == 0, f"{conflict}/12")
 
 print()
 if fails:
