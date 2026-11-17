@@ -4,7 +4,7 @@
     "note": "engine.py 与 scenes.py 共用。改完重启 ComfyUI 生效。regular expression 用 Python re 语法，不走 DOTALL。",
     "updated_at": "2026-11-17"
   },
-  "garment": "\\b(skirt|dress|shirt|t-shirt|blouse|sweater|hoodie|jacket|coat|uniform|jeans|pants|trousers|shorts|slacks|leggings|kimono|yukata|jinbei|qipao|hanfu|sari|robe|bathrobe|pajamas|nightgown|leotard|bodysuit|swimsuit|bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|apron|cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler|clothes|outfit|\\w*suit|\\w*sleeves?|\\w*coat|knitwear|swimwear|wear)\\b",
+  "garment": "\\b(skirt|dress|gown|shirt|t-shirt|blouse|sweater|hoodie|jacket|coat|uniform|jeans|pants|trousers|shorts|slacks|leggings|kimono|yukata|jinbei|qipao|hanfu|sari|robe|bathrobe|pajamas|nightgown|leotard|bodysuit|swimsuit|bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|apron|cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler|clothes|outfit|\\w*suit|\\w*sleeves?|\\w*coat|knitwear|swimwear|wear)\\b",
   "hosiery": "\\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|garter straps?|garter belt)\\b",
   "nude": [
     "completely nude",

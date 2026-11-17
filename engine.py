@@ -106,6 +106,31 @@ _CLOTH_STATE = _wl_re("cloth_state")
 NUDE_TAGS = {"completely nude", "fully nude", "nude", "naked",
              "nude with accessories only"}
 
+# ---------------- 全年龄「必须穿好」闸门 ----------------
+# sfw 的定义不只是「没有裸露词」，还得真的穿着上衣。以前只靠标签档位，
+# 一旦某条泳装词漏标（或角色库的 outfit 本身是比基尼），整段就只剩泳装。
+# 这里在拼装前做最后一道检查：没上衣就补一件，穿的是泳装/内衣就换掉。
+_TOP_RE = re.compile(
+    r"\b(shirt|blouse|t-shirt|sweater|cardigan|vest|jacket|coat|dress|gown|uniform|"
+    r"hoodie|sweatshirt|robe|kimono|yukata|jinbei|hanfu|qipao|cheongsam|jumpsuit|"
+    r"overalls|tunic|bodysuit|apron|suit|parka|cape|cloak|shawl|serafuku|blazer|"
+    r"jersey|sportswear|sailor collar|sailor|maid outfit|tracksuit|lab coat)\b", re.I)
+_BOTTOM_RE = re.compile(
+    r"\b(skirt|pants|jeans|shorts|trousers|leggings|dress|gown|overalls|jumpsuit|"
+    r"romper|sarong|bloomers)\b", re.I)
+# 补衣服时用的安全上衣 / 下装（都是 lv0、覆盖躯干、不会透）
+_SAFE_TOPS = ["white shirt", "black shirt", "knit sweater", "turtleneck", "cardigan",
+              "hoodie", "blouse", "dress shirt", "sweatshirt", "vest"]
+_SAFE_BOTTOMS = ["pleated skirt", "long skirt", "pants", "jeans", "shorts",
+                 "trousers", "pencil skirt", "denim skirt"]
+
+# 全年龄 / 擦边的负面补充：主动把画歪的方向压下去。
+# 正向里已经有的词会被 build_negative 去掉，不会自相矛盾。
+_NEG_SAFE = ["nsfw", "nude", "naked", "topless", "nipples", "cleavage",
+             "underwear", "panties", "bra", "bikini", "lingerie", "see-through",
+             "spread legs", "ass focus", "crotch"]
+_NEG_SUGGESTIVE = ["nsfw", "nude", "naked", "topless", "nipples", "panties", "crotch"]
+
 RATING_TAGS = {0: ["safe"], 1: ["sensitive"], 2: ["nsfw"], 3: ["nsfw", "explicit"], 4: ["nsfw", "explicit"]}
 NSFW_COUNT = {0: 0, 1: 0, 2: 1, 3: 2, 4: 3, 99: 2}
 
@@ -132,13 +157,19 @@ def _cat_map():
 
 
 def _level_index():
-    """en -> 档位（同名标签取最高，避免同一词在不同分类里档位打架）。"""
+    """en -> 档位。
+
+    同名标签跨分类只认 tags.json 里**排在前面的那个分类**（clothing / body /
+    pose 都在 nsfwbody / nsfwcloth 之前）。以前这里取 max，结果 base 里的
+    `freckles` 被 nsfwbody 的同名标签拉到 2，sfw 档连雀斑都抽不到；
+    scenes.level_of 那边取 min，又把 clothing 里的 `bikini` 压成 0，
+    sfw 直接出泳装。两边现在统一成「首个分类为准」。
+    """
     if "lv" not in _CACHE:
         idx = {}
         for c in load_data()["cats"]:
             for t in c["tags"]:
-                k = t["en"].lower()
-                idx[k] = max(idx.get(k, 0), int(t["lv"]))
+                idx.setdefault(t["en"].lower(), int(t["lv"]))
         _CACHE["lv"] = idx
     return _CACHE["lv"]
 
@@ -152,6 +183,10 @@ def drawable(cat_id, lv):
 
     结果按 (分类, 档位) 缓存 —— 出一次词要调 30 多次（20 个槽位 + nsfw 四类），
     每次遍历几百条纯属浪费。返回的 list 只读，调用方都在上面做推导式，不会改它。
+
+    全年龄（lv<=0）额外用词表兜一层：只要命中 nsfw_cloth（泳装 / 内衣 /
+    透明 / 裸露），即使数据里标成 0 也不进池子。数据是人手标的，
+    漏标一次就是一张 sfw 比基尼（用户 2026-11-17 报的），这里不靠标注。
     """
     key = ("pool", cat_id, int(lv))
     hit = _CACHE.get(key)
@@ -161,8 +196,11 @@ def drawable(cat_id, lv):
     for t in _cat_map().get(cat_id, {}).get("tags", []):
         if t.get("meta"):
             continue
-        if int(t["lv"]) <= lv:
-            out.append(t)
+        if int(t["lv"]) > lv:
+            continue
+        if int(lv) <= 0 and _NSFW_CLOTH.search(t["en"]):
+            continue
+        out.append(t)
     _CACHE[key] = out
     return out
 
@@ -207,6 +245,20 @@ def char_outfit(char, outfit_id=""):
             if str(o.get("id")) == str(outfit_id):
                 return [str(x) for x in (o.get("tags") or [])]
     return [str(x) for x in (outs[0].get("tags") or [])]
+
+
+def _apparel_ok(en, tv):
+    """角色库自带的某个词能不能进这一档。
+
+    角色库的 outfit / appearance 是从参考图统计出来的，标签不一定收录在
+    tags.json 里（tag_level 查不到就默认 0），光看档位会漏。所以低档位
+    再用词表兜一层：泳装 / 内衣一律不算全年龄（用户 2026-11-17 报的
+    「sfw 出比基尼」有一半就是角色官方服装本身就是泳装）。
+    """
+    tv = int(tv)
+    if tv <= 1 and _NSFW_CLOTH.search(str(en)) and not _HOSIERY.search(str(en)):
+        return False
+    return tag_level(en) <= tv
 
 
 def pick_character(rng, role_mode, role_name, role_works):
@@ -546,9 +598,10 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
             for en in char_appearance(char):
                 if tag_level(en) <= tv:
                     add("character", {"en": en, "zh": "", "lv": tag_level(en)})
-            # 服装跟随角色：把角色那套塞进来，并把服装槽关掉
+            # 服装跟随角色：把角色那套塞进来，并把服装槽关掉。
+            # 以前这里不看档位 —— 角色官方服装是泳装时，sfw 档直接照搬。
             if outfit_follow:
-                outfit = [t for t in char_outfit(char, char_outfit_id)]
+                outfit = [t for t in char_outfit(char, char_outfit_id) if _apparel_ok(t, tv)]
                 if outfit:
                     for en in outfit:
                         add("character", {"en": en, "zh": "", "lv": tag_level(en)})
@@ -639,6 +692,9 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
         chosen["nsfw"] = [t for t in chosen.get("nsfw", [])
                           if not _CLOTH_STATE.search(t["en"])]
 
+    # 全年龄体检：漏标的泳装 / 内衣在这里被换掉，没上衣就补一件
+    dress_drop, dress_fill = _ensure_dressed(chosen, tv, rng)
+
     # 评级词
     for r in RATING_TAGS.get(tv, []):
         add("rating", {"en": r, "zh": "", "lv": 0})
@@ -669,6 +725,10 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
         f"种子: {seed}",
         f"负面: {len([x for x in negative.split(',') if x.strip()])} 个",
     ]
+    if dress_drop or dress_fill:
+        report_lines.append(
+            f"全年龄体检: 换掉 {dress_drop} 个越界服装"
+            + (f" · 补 {dress_fill} 件基础衣物" if dress_fill else ""))
     return {
         "positive": positive,
         "negative": negative,
@@ -680,6 +740,58 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
         "picked": [{"slot": k, "en": t["en"], "lv": int(t.get("lv", 0))}
                    for k, items in chosen.items() for t in items],
     }
+
+
+def _dress_names(names, rng):
+    """把一组服装词洗成「全年龄能穿的一套」，返回 (新列表, 清掉数, 补上数)。
+
+    两条规则：
+      1. 命中 nsfw_cloth（泳装 / 内衣 / 透明）的删掉，袜子除外；
+      2. 没有上衣就补一件，没有下装且不是连衣裙/和服这类长款就补一条。
+    """
+    kept = [n for n in names
+            if not _NSFW_CLOTH.search(n) or _HOSIERY.search(n)]
+    dropped = len(names) - len(kept)
+    lower = {n.lower() for n in kept}
+    added = []
+
+    def put(en):
+        if en.lower() in lower:
+            return False
+        added.append(en)
+        lower.add(en.lower())
+        return True
+
+    if not any(_TOP_RE.search(n) for n in kept + added):
+        for _ in range(4):
+            if put(rng.choice(_SAFE_TOPS)):
+                break
+    long_cover = re.compile(
+        r"\b(dress|gown|kimono|yukata|jumpsuit|overalls|robe|hanfu|qipao|cheongsam|"
+        r"trench coat|long coat)\b", re.I)
+    if not any(_BOTTOM_RE.search(n) for n in kept + added) \
+            and not any(long_cover.search(n) for n in kept + added):
+        for _ in range(4):
+            if put(rng.choice(_SAFE_BOTTOMS)):
+                break
+    return kept + added, dropped, len(added)
+
+
+def _ensure_dressed(chosen, tv, rng):
+    """全年龄最后一道体检：clothing 槽按 _dress_names 洗一遍。
+
+    袜子（thighhighs / stockings）是合法画风，不动。
+    """
+    if int(tv) > 0:
+        return 0, 0
+    cloth = [t["en"] for t in (chosen.get("clothing") or [])]
+    if not cloth:
+        new, dropped, filled = _dress_names([], rng)
+        chosen["clothing"] = [{"en": n, "zh": "", "lv": 0} for n in new]
+        return dropped, filled
+    new, dropped, filled = _dress_names(cloth, rng)
+    chosen["clothing"] = [{"en": n, "zh": "", "lv": 0} for n in new]
+    return dropped, filled
 
 
 def _flatten(parts):
@@ -869,11 +981,11 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
     elif char:
         char_tags.append((char["tag"], 0))
         for en in char_appearance(char):
-            if scenes.level_of(en) <= tv:
+            if _apparel_ok(en, tv):
                 char_tags.append((en, scenes.level_of(en)))
         if outfit_follow:
             for en in char_outfit(char, char_outfit_id):
-                if scenes.level_of(en) <= tv:
+                if _apparel_ok(en, tv):
                     char_tags.append((en, scenes.level_of(en)))
 
     ordered = list(items)
@@ -915,6 +1027,21 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
     for slot, en in ordered:
         chosen.setdefault(slot, []).append({"en": en, "lv": 0})
 
+    # 全年龄体检（场景路径）：场景包的服装是手写列表，海边/泳池包第一件
+    # 就是 bikini；档位过滤只能挡住标了档位的，这里再做一次兜底换装。
+    dress_drop = dress_fill = 0
+    if int(tv) <= 0:
+        cloth_names = [e for s, e in ordered if s == "clothing"]
+        new_cloth, dress_drop, dress_fill = _dress_names(cloth_names, rng)
+        if dress_drop or dress_fill:
+            first = next((i for i, (s, _) in enumerate(ordered) if s == "clothing"),
+                         next((i for i, (s, _) in enumerate(ordered)
+                               if s == "environment"), len(ordered)))
+            ordered = [(s, e) for s, e in ordered if s != "clothing"]
+            for k, en in enumerate(new_cloth):
+                ordered.insert(first + k, ("clothing", en))
+            chosen["clothing"] = [{"en": en, "lv": 0} for en in new_cloth]
+
     # 画师（可选）
     if artist_on:
         pool = drawable("artist", tv)
@@ -953,6 +1080,10 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
         f"种子: {seed}",
         f"负面: {len([x for x in negative.split(',') if x.strip()])} 个",
     ]
+    if dress_drop or dress_fill:
+        report_lines.append(
+            f"全年龄体检: 换掉 {dress_drop} 个越界服装"
+            + (f" · 补 {dress_fill} 件基础衣物" if dress_fill else ""))
     return {
         "positive": positive,
         "negative": negative,
@@ -992,6 +1123,16 @@ def build_negative(lv, positive, enabled=True):
     neg = list(_neg_base())     # 拷贝：下面要按正向去重
     pos = {p.strip().lower() for p in positive.split(",")}
     neg = [n for n in neg if n.lower() not in pos]
+    # 低档位往「穿好衣服」的方向硬压：正向写 safe，负向就把 nsfw 那一路堵死。
+    # 正向里已经出现的词（角色自带 large breasts 之类）不重复写进来，避免自相矛盾。
+    extra = (_NEG_SAFE if int(lv) <= 0
+             else (_NEG_SUGGESTIVE if int(lv) <= 1 else []))
+    if extra:
+        have = {n.lower() for n in neg}
+        for n in extra:
+            if n.lower() not in pos and n.lower() not in have:
+                neg.append(n)
+                have.add(n.lower())
     if lv >= 2:
         # 正向要成人内容时，负面里不能再压 nsfw / safe 一类词，否则互相打架
         neg = [n for n in neg if not re.search(r"\b(nsfw|safe|sensitive|rating|questionable)\b", n, re.I)]

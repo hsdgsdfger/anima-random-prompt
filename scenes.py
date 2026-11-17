@@ -120,7 +120,11 @@ def _load():
             cats[c["id"]] = [t for t in c["tags"] if not t.get("meta")]
             for t in c["tags"]:
                 k = t["en"].lower()
-                lv[k] = min(lv.get(k, 9), int(t["lv"]))   # 跨分类取最小，避免同名误伤
+                # 同名标签跨分类只认「排在前面的那个分类」。tags.json 里
+                # clothing / body / pose 都在 nsfwbody / nsfwcloth 之前，所以
+                # bikini 取 clothing 的档位，不会像以前那样被 min() 拉成 0
+                # ——「sfw 抽出比基尼」就是这条 min 造成的（用户 2026-11-17 报）。
+                lv.setdefault(k, int(t["lv"]))
         _LV, _CATS = lv, cats
     return _SC, _LV, _CATS
 

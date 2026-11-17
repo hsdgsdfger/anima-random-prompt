@@ -21,7 +21,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
