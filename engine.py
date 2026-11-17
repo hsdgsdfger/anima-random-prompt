@@ -106,6 +106,11 @@ _HOSIERY = re.compile(
     r"\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|"
     r"garter straps?|garter belt)\b", re.I)
 
+# 外部角色词里"算不算带了外观"：发/瞳/皮肤/身材类
+_APPEAR_HINT = re.compile(
+    r"\b(hair|eyes|eyebrows|eyelashes|skin|breasts?|chest|waist|hips|thighs|"
+    r"figure|freckles|mole|horn|ears|tail|wings|halo)\b", re.I)
+
 RATING_TAGS = {0: ["safe"], 1: ["sensitive"], 2: ["nsfw"], 3: ["nsfw", "explicit"], 4: ["nsfw", "explicit"]}
 NSFW_COUNT = {0: 0, 1: 0, 2: 1, 3: 2, 4: 3, 99: 2}
 
@@ -293,9 +298,14 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     # 外部角色输入存在时，外观 / 服装是否让位（REQ：角色外观必须跟着提示词走）
     follow = set()
     if ext_kept:
-        if appearance_follow:
+        # 让位要看外部**实际带了什么**：无条件让位会让服装槽永久关闭，
+        # 角色节点没输出服装时整段提示词一件衣服都没有 —— 模型只能自己编，
+        # sfw 档在雪地里画出比基尼就是这么来的（用户 2026-11-17 报的）。
+        has_appear = any(_APPEAR_HINT.search(t) for t in ext_kept)
+        has_cloth = any(_GARMENT.search(t) for t in ext_kept)
+        if appearance_follow and has_appear:
             follow.update(["hair", "hair_color", "face", "eye_color", "body"])
-        if outfit_follow:
+        if outfit_follow and has_cloth:
             follow.update(["clothing", "accessory"])
 
     # 覆盖直通：直接当正向，完全跳过随机（负向按用户选择档位）
@@ -348,14 +358,21 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     if str(scene_mode) == "scene":
         # 让位的槽位在场景路径里靠权重 0 关闭：scenes.build 的完整性校验
         # 见到 `b.on(key)` 为 False 就跳过该槽，不会判「缺槽」重抽。
+        #
+        # 服装例外：先让场景正常产一套，build 之后再按场景类型取舍 ——
+        # 普通场景用角色服装（删场景的），泳池/海边/浴室这类场景用场景服装
+        # （删角色的）。一开始就把 clothing 权重打 0 的话，特殊场景也没衣服可换。
         scene_weights = dict(weights)
         for k in follow:
+            if k == "clothing":
+                continue
             scene_weights[k] = 0
         res = _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob,
                               scene_weights, role_mode, role_name, role_works, quality_prefix,
                               artist_on, extra_body, negative_on, seed,
                               ext_subjects, ext_others, ext_rejected,
-                              self_appear=("hair" in follow))
+                              self_appear=("hair" in follow),
+                              clothing_follow=("clothing" in follow))
         if res:
             return res
         # 场景拼不出来（几乎不会发生）就退回自由随机，保证节点永远有输出
@@ -684,7 +701,7 @@ def _generate_mixed(sel_key, sel_num, tv, basis, head, override, rng, tag_cap, b
 def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, weights,
                     role_mode, role_name, role_works, quality_prefix, artist_on,
                     extra_body, negative_on, seed, ext_subjects=None, ext_others=None,
-                    ext_rejected=0, self_appear=True):
+                    ext_rejected=0, self_appear=True, clothing_follow=False):
     """场景成套路径：环境/季节/服装/道具/姿势绑在一个包里，出来的串自带现实逻辑。"""
     try:
         from . import scenes
@@ -728,6 +745,20 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
         # 外部主体替代内置主体，位置仍在最前
         ordered = [(s, e) for s, e in ordered if s != "subject"]
         ordered = [("subject", t) for t in ext_subjects] + ordered
+
+    # 场景与角色服装谁优先（用户 2026-11-17 定的规则）：
+    #   · 普通场景 → 角色服装优先，删掉场景那套；
+    #   · 泳池 / 海边 / 浴场 / 温泉这类 → 场景优先，删掉角色那套
+    #     （穿常服站在泳池边在现实里不成立，模型也画不出合理的光影）。
+    # 角色没带服装时不删场景的 —— 否则整段提示词一件衣服都没有。
+    char_has_cloth = any(_GARMENT.search(en) and not _HOSIERY.search(en)
+                         for en, _ in char_tags)
+    if clothing_follow and char_has_cloth:
+        if scenes.is_special_scene(bundle_id):
+            char_tags = [(en, lv) for en, lv in char_tags
+                         if not (_GARMENT.search(en) and not _HOSIERY.search(en))]
+        else:
+            ordered = [(s, e) for s, e in ordered if s != "clothing"]
 
     # 主体组在最前面，统一在第一个非 subject 之前插入角色
     first_non_subject = next((i for i, (s, _) in enumerate(ordered) if s != "subject"),

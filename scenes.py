@@ -43,6 +43,20 @@ CORE = ("hair", "hair_color", "face", "eye_color", "body", "clothing", "accessor
         "pose", "expression", "camera", "composition", "environment", "time",
         "lighting", "props", "artstyle", "theme")
 
+# 现实中必须换装的场景：泳池 / 海边 / 浴场 / 温泉 / 淋浴。
+# 这类场景穿常服在画面上不成立，所以服装由场景决定，角色自带的那套让位。
+SPECIAL_SCENE = re.compile(
+    r"pool|beach|onsen|bath|shower|swim|sea_|ocean|lake|river|water|aquarium", re.I)
+
+
+def is_special_scene(bundle_id):
+    """该场景是否属于「必须换装」的场景（服装由场景优先）。"""
+    sc, _, _ = _load()
+    b = next((x for x in sc["bundles"] if x["id"] == bundle_id), None)
+    if not b:
+        return bool(SPECIAL_SCENE.search(str(bundle_id or "")))
+    return bool(b.get("water")) or bool(SPECIAL_SCENE.search(str(bundle_id or "")))
+
 
 def _load():
     global _SC, _LV, _CATS
