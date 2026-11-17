@@ -220,6 +220,18 @@ def _auto_cap(tv):
     return 28 if tv <= 1 else 32
 
 
+def _slot_weight(weights, key, default=1.0):
+    """槽位权重读取：非数字（"high" / null / 对象）一律回落到默认值。
+
+    以前这里是裸 float()，用户把 JSON 写错一个字就 ValueError，节点直接中断，
+    而场景路径有自己的兜底，两条路径行为不一致。
+    """
+    try:
+        return float((weights or {}).get(key, default))
+    except (TypeError, ValueError, AttributeError):
+        return default
+
+
 # ---------------------------------------------------------------- 外部角色词
 
 def split_role(role_prompt):
@@ -397,7 +409,7 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
             continue                      # 外观 / 服装已交给角色输入
         if s["key"] == "artstyle" and artist_on:
             continue                      # 画师已经占用这个位置
-        w = float(weights.get(s["key"], 1.0))
+        w = _slot_weight(weights, s["key"])
         if w <= 0:
             continue
         p = min(1.0, max(0.0, s["prob"] * w * (float(base_prob) / default_base)))
@@ -440,6 +452,8 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
 
     # 成人向：按目标档位定量，仍受同一套候选池闸门约束
     nsfw_n = NSFW_COUNT.get(tv, 0)
+    if nsfw_n and _slot_weight(weights, "nsfw") <= 0:
+        nsfw_n = 0                 # slot_weights 里 nsfw:0 = 真的关掉（以前写了不生效）
     if nsfw_n:
         pool = [t for s in SLOTS if s["key"] == "nsfw" for c in s["cats"] for t in drawable(c, tv)]
         pool = [t for t in pool if not NSFW_DENY.search(t["en"])]
@@ -464,13 +478,7 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
 
     flat = _flatten(parts)
     cap = int(tag_cap) if int(tag_cap or 0) > 0 else _auto_cap(tv)
-    if len(flat) > cap:
-        drop_order = ["props", "weather", "composition", "camera", "accessory", "theme", "monster"]
-        for key in drop_order:
-            for t in chosen.get(key, []):
-                if t["en"] in flat and len(flat) > cap:
-                    flat.remove(t["en"])
-        flat = flat[:cap]
+    flat = _trim_to_cap(flat, chosen, cap)
 
     positive = ", ".join(flat)
     negative = build_negative(tv, positive, negative_on)
@@ -505,6 +513,66 @@ def _flatten(parts):
             if seg and seg.lower() not in {x.lower() for x in flat}:
                 flat.append(seg)
     return flat
+
+
+# 超上限时的丢弃顺序：越靠前越先让位（都是"有它更好、没它也成"的槽位）
+TRIM_ORDER = ["props", "weather", "composition", "camera", "accessory", "theme",
+              "monster", "artstyle", "expression", "body", "lighting", "environment",
+              "hair_color", "face", "hair", "eye_color", "pose", "clothing"]
+# 这几个槽位绝不因为超上限被剪：剪掉它们会出现"选了极端档却没人任何成人词 / 没有评级词"
+TRIM_KEEP = ("subject", "character", "nsfw", "rating")
+
+
+def _trim_to_cap(flat, chosen, cap):
+    """把整段压到 cap 以内，但保住评级词、成人向词、主体与角色。
+
+    以前是 drop_order 之后直接 flat[:cap] 从尾部硬截，而 ASM_ORDER 末尾正好是
+    monster -> nsfw -> rating，于是最先被切掉的就是最该留的那几个。
+    现在的顺序是：保住必留项 -> 补质量前缀/手写补充 -> 还有空位就按
+    "重要度从高到低"回填可选槽位（服装、姿势、发型优先，道具、天气最后）。
+    """
+    if cap <= 0 or len(flat) <= cap:
+        return flat
+    keep, drop = set(), set()
+    for key in TRIM_KEEP:
+        for t in chosen.get(key, []):
+            keep.add(str(t.get("en", "")).strip().lower())
+    for key in TRIM_ORDER:
+        for t in chosen.get(key, []):
+            drop.add(str(t.get("en", "")).strip().lower())
+
+    out = [t for t in flat if t.strip().lower() in keep]
+    spare = max(0, cap - len(out))
+
+    # 1) 不在丢弃名单里的词（质量前缀、extra_body）先留着
+    for t in flat:
+        if spare <= 0:
+            break
+        k = t.strip().lower()
+        if k in keep or k in drop:
+            continue
+        out.append(t)
+        spare -= 1
+
+    # 2) 还有空位就回填可选槽位：TRIM_ORDER 越靠后越重要，所以倒着补
+    if spare > 0:
+        have = {t.strip().lower() for t in out}
+        for key in reversed(TRIM_ORDER):
+            for t in chosen.get(key, []):
+                if spare <= 0:
+                    break
+                en = str(t.get("en", "")).strip()
+                k = en.lower()
+                if not k or k in have:
+                    continue
+                if k not in {x.strip().lower() for x in flat}:
+                    continue      # 已被 _flatten 去重掉的，不重复补
+                out.append(en)
+                have.add(k)
+                spare -= 1
+
+    order = {t.strip().lower(): i for i, t in enumerate(flat)}
+    return sorted(out, key=lambda t: order.get(t.strip().lower(), 0))[:cap]
 
 
 def _generate_mixed(sel_key, sel_num, tv, basis, head, override, rng, tag_cap, base_prob,
@@ -597,12 +665,15 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
 
     char = None if ext_others else pick_character(rng, role_mode, role_name, role_works)
     role_from = "外部输入" if ext_others else ("词库" if char else "不指定")
-    monster_on = float(weights.get("monster", 1.0) or 0) > 0 and rng.random() < 0.06
+    monster_on = _slot_weight(weights, "monster") > 0 and rng.random() < 0.06
 
     # self_appear=False 表示用户关掉了「外观让位」：即使有角色也照抽外观
     has_character = (bool(ext_others) or bool(char)) and self_appear
     items, bundle_id = None, None
-    for _ in range(60):
+    # 场景包自带 7 条互斥校验，不合格就整包重抽。原来是 60 次：极端情况下
+    # 单次排队会被这 60 轮完整构建拖住；12 次已经足够（再多就说明权重配置本身
+    # 让这个场景包凑不出来，直接退回自由随机更快也更稳）。
+    for _ in range(12):
         items, bundle_id = scenes.build(tv, rng, weights, base_prob,
                                         monster=monster_on,
                                         has_character=has_character)
@@ -656,12 +727,7 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
 
     flat = _flatten(parts)
     cap = int(tag_cap) if int(tag_cap or 0) > 0 else _auto_cap(tv)
-    if len(flat) > cap:
-        for key in ("props", "weather", "accessory", "camera", "composition", "theme", "monster"):
-            for t in chosen.get(key, []):
-                if t["en"] in flat and len(flat) > cap:
-                    flat.remove(t["en"])
-        flat = flat[:cap]
+    flat = _trim_to_cap(flat, chosen, cap)
 
     positive = ", ".join(flat)
     negative = build_negative(tv, positive, negative_on)

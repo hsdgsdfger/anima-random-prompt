@@ -86,7 +86,8 @@ class _Builder:
             return False
         if slot in ("hair", "hair_color", "face", "eye_color", "body", "breast",
                     "clothing", "accessory", "pose", "expression", "camera",
-                    "environment", "time", "lighting", "props", "artstyle", "theme") \
+                    "environment", "time", "lighting", "props", "artstyle", "theme",
+                    "weather", "season", "composition") \
                 and not self.on(slot):
             return False          # 权重 0 / 关槽位
         low = en.lower()
@@ -215,6 +216,8 @@ def build(cap, rng, weights=None, base_prob=0.65, monster=False, has_character=F
     # 成人向：数量按档位，且要求服装对得上
     n = sc["nsfw_count"].get(str(cap), 2) if cap != 99 else 2
     n = int(n)
+    if n and b.weight("nsfw") <= 0:
+        n = 0                  # slot_weights 里 nsfw:0 = 真的关掉成人向
     if n:
         key = str(cap if cap < 5 else 4)
         offer = sc.get("nsfw_offer", {}).get(bundle["id"], {})

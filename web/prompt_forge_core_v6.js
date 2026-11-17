@@ -438,8 +438,8 @@ function renderConflict() {
   panel.conflict.textContent = "⚠ " + list.join("；");
 }
 
-function chipOf(t, favSet) {
-  const on = st.selected.includes(t.en);
+function chipOf(t, favSet, selSet) {
+  const on = selSet ? selSet.has(t.en) : st.selected.includes(t.en);
   const chip = el("span", "fchip" + (on ? " on" : "") + (favSet.has(t.en) ? " fav" : ""));
   chip.dataset.en = t.en;
   chip.appendChild(el("span", "ck", "✓"));
@@ -468,9 +468,10 @@ function chipOf(t, favSet) {
 function refreshChipStates() {
   if (!panel?.freeMain) return;
   const favSet = new Set(st.favTags);
+  const selSet = new Set(st.selected);      // 一次建 Set，避免每颗胶囊都做线性查找
   panel.freeMain.querySelectorAll(".fchip").forEach((c) => {
     const en = c.dataset.en;
-    c.classList.toggle("on", st.selected.includes(en));
+    c.classList.toggle("on", selSet.has(en));
     const isFav = favSet.has(en);
     c.classList.toggle("fav", isFav);
     const star = c.querySelector(".star");
@@ -483,10 +484,16 @@ function renderFreeList() {
   const q = st.q.trim().toLowerCase();
   const hit = (t) => !q || t.en.toLowerCase().includes(q) || (t.zh || "").includes(q);
   const favSet = new Set(st.favTags);
+  const selSet = new Set(st.selected);
   const box = panel.freeMain;
   const keepScroll = box.scrollTop;
   box.innerHTML = "";
-  const byEn = new Map(lib.map((t) => [t.en, t]));
+  // tag -> 记录 的索引只在"收藏 / 最近"这两个页签需要，别每次重绘都建一遍
+  let byEn = null;
+  const lookup = (e) => {
+    if (!byEn) byEn = new Map(lib.map((t) => [t.en, t]));
+    return byEn.get(e);
+  };
 
   const pushSec = (title, tags, limit) => {
     const shownAll = tags.filter(hit);
@@ -498,7 +505,7 @@ function renderFreeList() {
     h.appendChild(el("span", "n", String(shownAll.length)));
     sec.appendChild(h);
     const wrap = el("div", "f-chips");
-    shown.forEach((t) => wrap.appendChild(chipOf(t, favSet)));
+    shown.forEach((t) => wrap.appendChild(chipOf(t, favSet, selSet)));
     sec.appendChild(wrap);
     box.appendChild(sec);
     if (limit && shownAll.length > shown.length) {
@@ -512,10 +519,10 @@ function renderFreeList() {
   let title = "全部", count = 0;
   if (st.fcat === "fav") {
     title = "收藏";
-    count = pushSec("★ 我的收藏", st.favTags.map((e) => byEn.get(e)).filter(Boolean));
+    count = pushSec("★ 我的收藏", st.favTags.map(lookup).filter(Boolean));
   } else if (st.fcat === "recent") {
     title = "最近";
-    count = pushSec("◷ 最近点过", st.recent.map((e) => byEn.get(e)).filter(Boolean));
+    count = pushSec("◷ 最近点过", st.recent.map(lookup).filter(Boolean));
   } else if (st.fcat && st.fcat !== "all") {
     const c = libCats.find((x) => x.id === st.fcat);
     title = c ? c.name : "全部";
@@ -614,16 +621,8 @@ function tplLevels() {
 }
 function filteredTpl(skipLevel = false) {
   const q = st.q.trim().toLowerCase();
-  let items = tpl.filter((x) => {
-    if (st.kind !== "all" && x.kind !== st.kind) return false;
-    if (st.cat === "other") {
-      if (x.bundle) return false;
-    } else if (st.cat !== "all" && (sceneMeta?.[x.bundle]?.[st.cat] !== true)) return false;
-    if (!skipLevel && st.tplLevel !== "all" && x.level !== st.tplLevel) return false;
-    if (st.onlyFav && !st.favTpl.includes(x.id)) return false;
-    if (q && !(x.prompt.toLowerCase().includes(q) || (SCENE_ZH[x.bundle] || "").includes(q))) return false;
-    return true;
-  });
+  const favSet = new Set(st.favTpl);
+  let items = tpl.filter((x) => tplPass(x, skipLevel, q, favSet));
   if (st.tplSort === "match" && st.selected.length) {
     const want = new Set(st.selected.map((s) => s.toLowerCase()));
     items = items.map((x) => {
@@ -637,8 +636,46 @@ function filteredTpl(skipLevel = false) {
   }
   return items;
 }
+
+// 一套模板是否通过当前筛选条件；filteredTpl 与档位计数共用同一份判断，
+// 避免两处各写一套、改了一处另一处对不上。
+function tplPass(x, skipLevel, q, favSet) {
+  if (st.kind !== "all" && x.kind !== st.kind) return false;
+  if (st.cat === "other") {
+    if (x.bundle) return false;
+  } else if (st.cat !== "all" && (sceneMeta?.[x.bundle]?.[st.cat] !== true)) return false;
+  if (!skipLevel && st.tplLevel !== "all" && x.level !== st.tplLevel) return false;
+  if (st.onlyFav && !favSet.has(x.id)) return false;
+  if (q && !(x.prompt.toLowerCase().includes(q) || (SCENE_ZH[x.bundle] || "").includes(q))) return false;
+  return true;
+}
+
+// 档位计数：一次遍历算出全部档位，按筛选条件签名缓存。
+// 以前是每个档位跑一遍 filteredTpl(true)，6 个档位 = 6 次全表扫描。
+let _lvSig = "";
+let _lvMap = null;
+function lvSignature() {
+  return [st.kind, st.cat, st.q, st.onlyFav ? 1 : 0, st.favTpl.length,
+          tpl ? tpl.length : -1, sceneMeta ? 1 : 0].join("|");
+}
+function levelCounts() {
+  const sig = lvSignature();
+  if (_lvMap && _lvSig === sig) return _lvMap;
+  const q = st.q.trim().toLowerCase();
+  const favSet = new Set(st.favTpl);
+  const map = { all: 0 };
+  for (const x of tpl || []) {
+    if (!tplPass(x, true, q, favSet)) continue;
+    map.all++;
+    map[x.level] = (map[x.level] || 0) + 1;
+  }
+  _lvSig = sig;
+  _lvMap = map;
+  return map;
+}
 function levelCount(level) {
-  return filteredTpl(true).filter((x) => level === "all" || x.level === level).length;
+  const m = levelCounts();
+  return level === "all" ? m.all : (m[level] || 0);
 }
 
 function cardOf(item) {
@@ -1644,6 +1681,9 @@ function rollFromNode() {
     template_override: "",
     override_mode: get("override_mode", "直通") === "混合" ? "mixed" : "direct",
     role_prompt: node?.inputs?.find?.((i) => i.name === "role_prompt")?.link ? "__linked__" : "",
+    // 这两个开关以前没传过去，导致面板"随机一份"和直接排队的结果不一致
+    appearance_follow: get("appearance_follow", true) !== false,
+    outfit_follow: !!get("outfit_follow", false),
   };
   // 角色输入若已连线，交给后端按节点输入取；前端拿不到上游值，只能不带
   if (payload.role_prompt === "__linked__") payload.role_prompt = "";

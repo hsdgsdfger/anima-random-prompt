@@ -29,14 +29,16 @@ def _default_state():
     }
 
 
-def _atomic_write(path, data):
+def _atomic_write(path, data, sync=True):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.flush()
-        os.fsync(f.fileno())
+        if sync:
+            os.fsync(f.fileno())   # 用户手动改收藏时刷盘；节点每次出图不必
     os.replace(tmp, path)
+
 
 
 def _read(path, default):
@@ -78,10 +80,10 @@ def load_state():
     return normalize_state(_read(STATE_PATH, {}))
 
 
-def save_state(raw):
+def save_state(raw, sync=True):
     st = normalize_state(raw)
     try:
-        _atomic_write(STATE_PATH, st)
+        _atomic_write(STATE_PATH, st, sync=sync)
     except Exception as exc:
         return False, f"写入失败: {exc}"
     return True, None

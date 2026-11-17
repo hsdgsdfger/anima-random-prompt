@@ -6,6 +6,7 @@
 """
 import asyncio
 import importlib.util
+import json
 import os
 import sys
 import types
@@ -19,19 +20,32 @@ web = types.ModuleType("aiohttp.web")
 
 
 class _Resp:
-    def __init__(self, payload, status=200):
-        self.payload = payload
+    def __init__(self, payload=None, status=200, body=None, content_type=None,
+                 headers=None):
         self.status = status
+        self.body = body
+        self.content_type = content_type
+        self.headers = headers or {}
+        self.payload = payload
+        if self.payload is None and body is not None:
+            try:
+                raw = body.decode("utf-8") if isinstance(body, bytes) else body
+                self.payload = json.loads(raw)
+            except Exception:
+                self.payload = None
 
 
 class _File:
-    def __init__(self, path):
+    def __init__(self, path, headers=None):
         self.path = path
+        self.headers = headers or {}
         self.status = 200
 
 
 web.json_response = lambda obj, status=200: _Resp(obj, status)
-web.FileResponse = lambda path: _File(path)
+web.Response = lambda body=None, status=200, content_type=None, headers=None: \
+    _Resp(None, status, body, content_type, headers)
+web.FileResponse = lambda path, headers=None: _File(path, headers)
 aiohttp.web = web
 sys.modules["aiohttp"] = aiohttp
 sys.modules["aiohttp.web"] = web
@@ -79,10 +93,11 @@ def ok(name, cond, extra=""):
 
 
 class Req:
-    def __init__(self, body=None, query=None, match=None):
+    def __init__(self, body=None, query=None, match=None, headers=None):
         self._body = body
         self.query = query or {}
         self.match_info = match or {}
+        self.headers = headers or {}
 
     async def json(self):
         if self._body is None:

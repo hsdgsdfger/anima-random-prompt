@@ -9,6 +9,7 @@
 Comfyui-Anima-Wardrobe-V6 构建而来；构建完成后本插件完全独立，装不装 V6 都能用。
 """
 import base64
+import gzip
 import hashlib
 import json
 import os
@@ -20,7 +21,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.1.9"
+__version__ = "0.1.10"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
@@ -240,7 +241,9 @@ class AnimaCharacterPicker:
         try:
             recent = [rec["tag"]] + [t for t in (st.get("recent") or []) if t != rec["tag"]]
             st["recent"] = recent[:24]
-            _char_state.save_state(st)
+            # 只为更新"最近用过谁"，不必每次都 fsync 刷盘：同步刷盘放在出图路径上
+            # 会让每张图多一次磁盘等待
+            _char_state.save_state(st, sync=False)
         except Exception:
             pass
 
@@ -263,11 +266,18 @@ WEB_DIRECTORY = "./web"
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
-# 面板数据接口：把 1800 条成品模板按需返回给前端
+# 面板数据接口：把成品模板 / 词库 / 角色库按需返回给前端
 try:
     from server import PromptServer
 
-    _UI_CACHE = {}
+    # 预序列化缓存：{cache_key: {stamp, raw, gz, etag}}
+    # 大接口（词库 589 KB / 模板 1.2 MB / 角色库 1.2 MB）只在这里存一次字节，
+    # 命中后直接回字节，不再每次请求都重新 dumps + 重新分配大字典。
+    _BODY_CACHE = {}
+    _BODY_CACHE_MAX = 48
+    _UI_CACHE = {}          # 需要按查询条件过滤的原始列表（模板）
+    _CHAR_VER = [0]         # 自定义角色改动计数，用作失效信号
+    _THUMB_MAP = [None, -1] # (tag -> 缩略图 slug, 版本)
 
     def _read_json(fname, default):
         try:
@@ -276,11 +286,73 @@ try:
         except Exception:
             return default
 
+    def _user_path(fname):
+        return os.path.join(_char_state.USER_DIR, fname)
+
+    def _stamp(*paths):
+        """文件指纹 (mtime_ns, size)：用来判断预序列化结果是否需要重做。"""
+        out = []
+        for p in paths:
+            try:
+                s = os.stat(p)
+                out.append((s.st_mtime_ns, s.st_size))
+            except OSError:
+                out.append(None)
+        return tuple(out)
+
+    def _gzip_ok(request):
+        return "gzip" in (request.headers.get("Accept-Encoding") or "").lower()
+
+    def _json_resp(request, cache_key, build, stamp=None):
+        """预序列化 + 预压缩 + ETag 的 JSON 响应。
+
+        · 命中缓存：直接吐已经压好的字节（省掉 dumps 与压缩的 CPU）；
+        · 未命中：build() 现算一次，再压成 gzip 存起来；
+        · 带 ETag，浏览器第二次拿到 304，连字节都不用传。
+        """
+        from aiohttp import web
+
+        ent = _BODY_CACHE.get(cache_key)
+        if ent is not None and stamp is not None and ent["stamp"] != stamp:
+            _BODY_CACHE.pop(cache_key, None)
+            ent = None
+        if ent is None:
+            payload = build()
+            raw = json.dumps(payload, ensure_ascii=False,
+                             separators=(",", ":")).encode("utf-8")
+            ent = {"stamp": stamp, "raw": raw, "gz": gzip.compress(raw, 6),
+                   "etag": '"%s"' % hashlib.sha1(raw).hexdigest()[:16]}
+            if len(_BODY_CACHE) >= _BODY_CACHE_MAX:
+                _BODY_CACHE.clear()
+            _BODY_CACHE[cache_key] = ent
+
+        headers = {"ETag": ent["etag"], "Cache-Control": "no-cache",
+                   "Vary": "Accept-Encoding"}
+        if request.headers.get("If-None-Match") == ent["etag"]:
+            return web.Response(status=304, headers=headers)
+        if _gzip_ok(request):
+            headers["Content-Encoding"] = "gzip"
+            return web.Response(body=ent["gz"], content_type="application/json",
+                                headers=headers)
+        return web.Response(body=ent["raw"], content_type="application/json",
+                            headers=headers)
+
+    def _thumb_slug(tag):
+        """角色 tag -> 磁盘缩略图文件名。
+
+        内置图的文件名来自记录的 thumb 字段（如 kaga (kancolle) 的图叫
+        kaga_kancolle.webp），不是 tag 本身；直接拿 tag 拼会 58% 取不到图。
+        """
+        if _THUMB_MAP[0] is None or _THUMB_MAP[1] != _CHAR_VER[0]:
+            m = {}
+            for c in _char_picker.library()["characters"]:
+                m[str(c.get("tag") or "").lower()] = str(c.get("thumb") or c.get("tag") or "")
+            _THUMB_MAP[0], _THUMB_MAP[1] = m, _CHAR_VER[0]
+        return _THUMB_MAP[0].get(str(tag or "").lower(), "")
+
     @PromptServer.instance.routes.get("/prompt_forge/library")
     async def _prompt_forge_library(request):
-        from aiohttp import web
-        cats = _UI_CACHE.get("lib")
-        if cats is None:
+        def build():
             raw = _read_json("tags.json", {"cats": []})
             cats = [{
                 "id": c["id"],
@@ -290,14 +362,14 @@ try:
                           "meta": bool(t.get("meta"))}
                          for t in c.get("tags", [])],
             } for c in raw.get("cats", [])]
-            _UI_CACHE["lib"] = cats
-        return web.json_response({"cats": cats})
+            return {"cats": cats}
+
+        return _json_resp(request, "pf|library", build,
+                          _stamp(os.path.join(_DATA_DIR, "tags.json")))
 
     @PromptServer.instance.routes.get("/prompt_forge/scene_meta")
     async def _prompt_forge_scene_meta(request):
-        from aiohttp import web
-        meta = _UI_CACHE.get("scene_meta")
-        if meta is None:
+        def build():
             sc = _read_json("scenes.json", {"bundles": []})
             meta = {}
             for b in sc.get("bundles", []):
@@ -310,26 +382,26 @@ try:
                     "night": night,
                     "monster": b["id"] in (sc.get("monster_bundles") or []),
                 }
-            _UI_CACHE["scene_meta"] = meta
-        return web.json_response(meta)
+            return meta
+
+        return _json_resp(request, "pf|scene_meta", build,
+                          _stamp(os.path.join(_DATA_DIR, "scenes.json")))
 
     @PromptServer.instance.routes.get("/prompt_forge/scenes")
     async def _prompt_forge_scenes(request):
-        from aiohttp import web
-        sc = _UI_CACHE.get("scenes")
-        if sc is None:
-            sc = _read_json("scenes.json", {"bundles": []})
-            _UI_CACHE["scenes"] = sc
-        return web.json_response(sc)
+        def build():
+            return _read_json("scenes.json", {"bundles": []})
+
+        return _json_resp(request, "pf|scenes", build,
+                          _stamp(os.path.join(_DATA_DIR, "scenes.json")))
 
     @PromptServer.instance.routes.get("/prompt_forge/tag_flags")
     async def _prompt_forge_tag_flags(request):
-        from aiohttp import web
-        flags = _UI_CACHE.get("tag_flags")
-        if flags is None:
-            flags = _read_json("tag_flags.json", {})
-            _UI_CACHE["tag_flags"] = flags
-        return web.json_response(flags)
+        def build():
+            return _read_json("tag_flags.json", {})
+
+        return _json_resp(request, "pf|tag_flags", build,
+                          _stamp(os.path.join(_DATA_DIR, "tag_flags.json")))
 
     def _roll_from(payload):
         """把前端传来的节点全参数 JSON 归一化后交给 generate。"""
@@ -361,6 +433,8 @@ try:
             override_mode=str(payload.get("override_mode") or "direct"),
             role_prompt=str(payload.get("role_prompt") or ""),
             settings=cfg,
+            appearance_follow=bool(payload.get("appearance_follow", True)),
+            outfit_follow=bool(payload.get("outfit_follow", False)),
         )
 
     @PromptServer.instance.routes.get("/prompt_forge/roll")
@@ -368,7 +442,10 @@ try:
         """旧只读接口，保留兼容（deprecated）；新代码走 POST。"""
         from aiohttp import web
         level = (request.query.get("level") or "sfw").strip().lower()
-        seed = int(request.query.get("seed") or -1)
+        try:
+            seed = int(request.query.get("seed") or -1)
+        except (TypeError, ValueError):
+            seed = -1                      # 手拼 URL 传了非数字也别 500
         res = _roll_from({"level": level if level in LEVEL_NUM else "sfw", "seed": seed,
                           "scene_mode": "scene"})
         return web.json_response({"positive": res["positive"],
@@ -394,34 +471,43 @@ try:
                                   "report": res["report"],
                                   "target_level": res.get("target_level")})
 
+    def _tpl_items(stamp):
+        """1 937 套模板（自产 + V6 + 用户自建），按文件指纹缓存；file 变了才重读。"""
+        cached = _UI_CACHE.get("tpl")
+        if cached is not None and cached["stamp"] == stamp:
+            return cached["items"]
+        data = _read_json("templates_ui.json", []) + _read_json("templates_v6.json", [])
+        # 用户自建模板放 userdata/，git pull 不会覆盖
+        try:
+            with open(_user_path("templates_extra.json"), "r", encoding="utf-8") as f:
+                extra = json.load(f)
+            if isinstance(extra, list):
+                data = data + [x for x in extra if isinstance(x, dict) and x.get("prompt")]
+        except Exception:
+            pass
+        _UI_CACHE["tpl"] = {"stamp": stamp, "items": data}
+        return data
+
     @PromptServer.instance.routes.get("/prompt_forge/templates")
     async def _prompt_forge_templates(request):
-        from aiohttp import web
         level = (request.query.get("level") or "").strip().lower()
         kind = (request.query.get("kind") or "").strip().lower()
-        data = _UI_CACHE.get("data")
-        if data is None:
-            # 自产模板 + 从 Anima Wardrobe V6 搬来的场景搭配（src="v6"）
-            data = _read_json("templates_ui.json", []) + _read_json("templates_v6.json", [])
-            # 用户自建模板放 userdata/，git pull 不会覆盖
-            user_tpl = os.path.join(_char_state.USER_DIR, "templates_extra.json")
-            try:
-                with open(user_tpl, "r", encoding="utf-8") as f:
-                    extra = json.load(f)
-                if isinstance(extra, list):
-                    data = data + [x for x in extra if isinstance(x, dict) and x.get("prompt")]
-            except Exception:
-                pass
-            _UI_CACHE["data"] = data
         src = (request.query.get("src") or "").strip().lower()
-        items = data
-        if level and level != "all":
-            items = [x for x in items if x.get("level") == level]
-        if kind and kind != "all":
-            items = [x for x in items if x.get("kind") == kind]
-        if src and src != "all":
-            items = [x for x in items if (x.get("src") or "builtin") == src]
-        return web.json_response({"total": len(items), "items": items})
+        stamp = _stamp(os.path.join(_DATA_DIR, "templates_ui.json"),
+                       os.path.join(_DATA_DIR, "templates_v6.json"),
+                       _user_path("templates_extra.json"))
+
+        def build():
+            items = _tpl_items(stamp)
+            if level and level != "all":
+                items = [x for x in items if x.get("level") == level]
+            if kind and kind != "all":
+                items = [x for x in items if x.get("kind") == kind]
+            if src and src != "all":
+                items = [x for x in items if (x.get("src") or "builtin") == src]
+            return {"total": len(items), "items": items}
+
+        return _json_resp(request, "pf|tpl|%s|%s|%s" % (level, kind, src), build, stamp)
 
     @PromptServer.instance.routes.get("/prompt_forge/userdata")
     async def _prompt_forge_userdata_get(request):
@@ -441,36 +527,39 @@ try:
         return web.json_response({"ok": True})
 
     # ---------------------------------------------------- 角色库（/anima_char/）
-    _CHAR_CACHE = {}
-
     def _char_library_payload():
-        if "payload" not in _CHAR_CACHE:
-            lib = _char_picker.library()
-            chars = []
-            for c in lib["characters"]:
-                chars.append({
-                    "tag": c["tag"],
-                    "name": c.get("name") or c["tag"],
-                    "zh": c.get("zh") or "",
-                    "work": c.get("work") or "",
-                    "trigger": c.get("trigger") or c["tag"],
-                    "pop": int(c.get("pop") or 0),
-                    "thumb": c.get("thumb") or "",
-                    "custom": bool(c.get("custom")),
-                    "appearance": c.get("appearance") or {},
-                    "outfits": [{"id": o.get("id"), "zh": o.get("zh") or "",
-                                 "level": int(o.get("level") or 0),
-                                 "tags": o.get("tags") or []}
-                                for o in (c.get("outfits") or [])],
-                })
-            _CHAR_CACHE["payload"] = {"works": _char_picker.works_payload(),
-                                      "characters": chars}
-        return _CHAR_CACHE["payload"]
+        lib = _char_picker.library()
+        chars = []
+        for c in lib["characters"]:
+            chars.append({
+                "tag": c["tag"],
+                "name": c.get("name") or c["tag"],
+                "zh": c.get("zh") or "",
+                "work": c.get("work") or "",
+                "trigger": c.get("trigger") or c["tag"],
+                "pop": int(c.get("pop") or 0),
+                "thumb": c.get("thumb") or "",
+                "custom": bool(c.get("custom")),
+                "appearance": c.get("appearance") or {},
+                "outfits": [{"id": o.get("id"), "zh": o.get("zh") or "",
+                             "level": int(o.get("level") or 0),
+                             "tags": o.get("tags") or []}
+                            for o in (c.get("outfits") or [])],
+            })
+        return {"works": _char_picker.works_payload(), "characters": chars}
+
+    def _char_stamp():
+        return (_CHAR_VER[0],) + _stamp(
+            os.path.join(_DATA_DIR, "characters.json"),
+            os.path.join(_DATA_DIR, "characters_extra.json"),
+            _user_path("characters_extra.json"),
+            _user_path("custom_characters.json"),
+        )
 
     @PromptServer.instance.routes.get("/anima_char/library")
     async def _char_library(request):
-        from aiohttp import web
-        return web.json_response(_char_library_payload())
+        # 序列化完就把 1 200 KB 的大字典丢掉，进程里只留压缩后的字节
+        return _json_resp(request, "char|library", _char_library_payload, _char_stamp())
 
     @PromptServer.instance.routes.get("/anima_char/state")
     async def _char_state_get(request):
@@ -495,14 +584,18 @@ try:
         tag = request.match_info.get("tag", "")
         custom = _char_state.custom_thumb_path(tag)
         if custom and os.path.exists(custom):
-            return web.FileResponse(custom)
-        safe = "".join(ch for ch in str(tag).lower() if ch.isalnum() or ch in "_-")
+            return web.FileResponse(custom, headers={"Cache-Control": "no-cache"})
+        # 内置图的文件名来自记录的 thumb 字段（kaga (kancolle) 的图叫
+        # kaga_kancolle.webp），直接拿 tag 拼会 58% 取不到图。
+        slug = _thumb_slug(tag) or tag
+        safe = "".join(ch for ch in str(slug).lower() if ch.isalnum() or ch in "_-")
         if not safe:
             return web.json_response({"error": "没有预览图"}, status=404)
         for ext in (".webp", ".jpg", ".png"):
             path = os.path.join(CHAR_THUMB_DIR, safe + ext)
             if os.path.exists(path):
-                return web.FileResponse(path)
+                return web.FileResponse(path, headers={
+                    "Cache-Control": "public, max-age=31536000, immutable"})
         return web.json_response({"error": "没有预览图"}, status=404)
 
     @PromptServer.instance.routes.post("/anima_char/thumb/{tag}")
@@ -551,7 +644,9 @@ try:
         if not ok:
             return web.json_response({"ok": False, "error": err}, status=400)
         _char_picker.invalidate()
-        _CHAR_CACHE.pop("payload", None)
+        _CHAR_VER[0] += 1
+        _THUMB_MAP[0] = None
+        _BODY_CACHE.pop("char|library", None)
         return web.json_response({"ok": True})
 
     @PromptServer.instance.routes.post("/anima_char/char/delete")
@@ -567,9 +662,13 @@ try:
         if not ok:
             return web.json_response({"ok": False, "error": err}, status=400)
         _char_picker.invalidate()
-        _CHAR_CACHE.pop("payload", None)
+        _CHAR_VER[0] += 1
+        _THUMB_MAP[0] = None
+        _BODY_CACHE.pop("char|library", None)
         return web.json_response({"ok": True})
-except Exception:  # 非 ComfyUI 环境（单元测试）下跳过路由注册
-    pass
+except Exception as _pf_exc:  # 非 ComfyUI 环境（单元测试）下跳过路由注册
+    # 以前这里是静默 pass：一旦某个路由注册失败，后面所有接口都会凭空消失，
+    # 前端只看到"加载失败"。至少要让日志里能看见真正的原因。
+    print(f"[PromptForge] 路由注册失败，工作台接口可能不完整: {_pf_exc!r}")
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "__version__", "WEB_DIRECTORY"]
