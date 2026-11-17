@@ -124,7 +124,8 @@ pf = {"GET": ["/prompt_forge/library", "/prompt_forge/scene_meta", "/prompt_forg
       "POST": ["/prompt_forge/roll", "/prompt_forge/userdata"]}
 cc = {"GET": ["/anima_char/library", "/anima_char/index", "/anima_char/char/{tag}",
                "/anima_char/state", "/anima_char/thumb/{tag}"],
-      "POST": ["/anima_char/state", "/anima_char/toggle", "/anima_char/thumb/{tag}",
+      "POST": ["/anima_char/state", "/anima_char/toggle", "/anima_char/bulk",
+               "/anima_char/thumb/{tag}",
                "/anima_char/char/save", "/anima_char/char/delete"]}
 want = {(k, p) for k, ps in pf.items() for p in ps} | {(k, p) for k, ps in cc.items() for p in ps}
 ok(f"共 {len(want)} 个方法全部注册（实际 {len(routes)}）", set(routes) == want,
@@ -146,6 +147,20 @@ ok("写入成功", r.payload.get("ok") is True, str(r.payload))
 r = call("GET", "/anima_char/state")
 ok("读回收藏", r.payload["favorites"] == ["hatsune_miku"], str(r.payload["favorites"]))
 ok("读回权重", r.payload["weights"].get("hatsune_miku") == 2.5)
+
+print("\n[角色库 /bulk 批量入池]")
+r = call("POST", "/anima_char/bulk",
+         Req({"key": "picked", "tags": ["hatsune_miku", "kaga (kancolle)", " KAGA (KANCOLLE) "],
+              "on": True}))
+ok("批量加入（自动去重 + 转小写）",
+   r.payload.get("ok") is True and r.payload["value"].count("kaga (kancolle)") == 1,
+   str(r.payload)[:140])
+r = call("POST", "/anima_char/bulk", Req({"key": "picked", "tags": ["hatsune_miku"], "on": False}))
+ok("批量移出", "hatsune_miku" not in (r.payload.get("value") or []), str(r.payload)[:140])
+r = call("POST", "/anima_char/bulk", Req({"key": "nope", "tags": ["x"], "on": True}))
+ok("非法 key 返回 400", isinstance(r, _Resp) and r.status == 400)
+r = call("POST", "/anima_char/bulk", Req({"key": "picked", "tags": [], "on": True}))
+ok("空 tags 返回 400", isinstance(r, _Resp) and r.status == 400)
 
 print("\n[角色库 /thumb]")
 r = call("GET", "/anima_char/thumb/{tag}", Req(match={"tag": "hatsune_miku"}))

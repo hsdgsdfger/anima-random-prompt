@@ -188,14 +188,64 @@ function pickOne(tag) {
   toast(`已选：${c.zh || c.name}`);
 }
 /* 集合的增删走 /anima_char/toggle：服务端读最新再改一条，
-   不会被另一个标签页的旧快照整存覆盖（用户 2026-11-17 报收藏莫名少了）。 */
+   不会被另一个标签页的旧快照整存覆盖（用户 2026-11-17 报收藏莫名少了）。
+   ⚠️ jfetch 返回的已经是解析好的 JSON，不要再 .json() ——
+      以前这里多写了一次 .then((r) => r.json())，于是每点一次收藏/勾选
+      就弹「保存失败：r.json is not a function」（用户 2026-11-17 报）。 */
 function pushToggle(key, tag, on) {
-  jfetch("/anima_char/toggle", {
+  return jfetch("/anima_char/toggle", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key, tag, on }),
-  }).then((r) => r.json()).then((j) => {
+  }).then((j) => {
     if (j.ok && Array.isArray(j.value)) st.state[key] = j.value;
   }).catch((e) => toast(`保存失败：${e.message || e}`, false));
+}
+
+/* 批量版：把当前分类（含作品筛选与搜索词）一次性加入 / 移出勾选池。
+   角色库有两千多个，逐个点不现实 —— 用户要的是「这一批里随便抽」。 */
+function pushBulk(key, tags, on) {
+  if (!tags.length) return Promise.resolve(0);
+  return jfetch("/anima_char/bulk", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, tags, on }),
+  }).then((j) => {
+    if (j.ok && Array.isArray(j.value)) st.state[key] = j.value;
+    return j.ok ? (j.changed ?? tags.length) : 0;
+  }).catch((e) => { toast(`保存失败：${e.message || e}`, false); return 0; });
+}
+
+/* 当前筛选范围（页签 + 作品 + 搜索）的全部角色，不含被排除的 */
+function scopeTags() {
+  const ban = new Set(st.state.excluded || []);
+  return currentList().map((c) => c.tag).filter((t) => !ban.has(t));
+}
+
+function addScopeToPool() {
+  const tags = scopeTags();
+  if (!tags.length) { toast("当前分类没有可加入的角色", false); return; }
+  const have = new Set(st.state.picked || []);
+  const add = tags.filter((t) => !have.has(t));
+  if (!add.length) { toast(`当前分类的 ${tags.length} 个角色都已在勾选池里`); return; }
+  pushBulk("picked", add, true).then((n) => {
+    if (!n) return;
+    // 勾选池有货就把节点模式切到「多选加权」，否则随机还是走全库，等于白加
+    if (!(st.state.picked || []).length) return;
+    setWidget("mode", "多选加权");
+    renderTabs(); renderCards(); renderInfo();
+    toast(`已把 ${n} 个角色加入勾选池（共 ${st.state.picked.length} 个），节点模式已切到「多选加权」`);
+  });
+}
+
+function removeScopeFromPool() {
+  const tags = scopeTags();
+  const have = new Set(st.state.picked || []);
+  const drop = tags.filter((t) => have.has(t));
+  if (!drop.length) { toast("当前分类没有已勾选的角色", false); return; }
+  pushBulk("picked", drop, false).then((n) => {
+    if (!n) return;
+    renderTabs(); renderCards(); renderInfo();
+    toast(`已从勾选池移出 ${drop.length} 个角色`);
+  });
 }
 
 function toggleFav(tag) {
@@ -777,6 +827,21 @@ function openPanel(node) {
   side.appendChild(wq);
   const workList = el("div", "worklist");
   side.appendChild(workList);
+
+  // 当前分类批量入池：两千多个角色逐个点 ＋ 不现实，
+  // 「这一批里随便抽」才是多选加权真正好用的地方。
+  const sideOps = el("div", "side-ops");
+  const addBtn = el("div", "sbtn main", "＋ 当前分类全加入勾选池");
+  addBtn.title = "把当前页签 + 作品筛选 + 搜索范围内的全部角色一次性加入勾选池（排除名单里的跳过）；加入后节点模式自动切「多选加权」";
+  addBtn.onclick = addScopeToPool;
+  const rmBtn = el("div", "sbtn", "－ 从勾选池移出当前分类");
+  rmBtn.title = "把当前筛选范围内的角色从勾选池里移出（误点全加的撤销）";
+  rmBtn.onclick = removeScopeFromPool;
+  const hint = el("div", "shint", "范围 = 当前页签 + 作品 + 搜索词");
+  sideOps.appendChild(addBtn);
+  sideOps.appendChild(rmBtn);
+  sideOps.appendChild(hint);
+  side.appendChild(sideOps);
   body.appendChild(side);
 
   const cards = el("div", "cards");
@@ -937,6 +1002,13 @@ const CSS = `
 .ac-win .workrow.on{background:#262931;color:#e6b45c}
 .ac-win .workrow .wn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ac-win .workrow .wc{color:#666c77;font-size:10.5px}
+.ac-win .side-ops{flex:0 0 auto;padding:8px;border-top:1px solid #2e3037;display:flex;flex-direction:column;gap:6px}
+.ac-win .side-ops .sbtn{padding:7px 9px;border-radius:8px;background:#262931;border:1px solid #3a3e48;
+  color:#cfd5df;cursor:pointer;font-size:11.5px;text-align:center;line-height:1.3}
+.ac-win .side-ops .sbtn:hover{border-color:#e6b45c;color:#fff}
+.ac-win .side-ops .sbtn.main{background:linear-gradient(180deg,#3a3126,#2b2620);border-color:#6b5330;color:#f0d3a0}
+.ac-win .side-ops .sbtn.main:hover{color:#fff5e0;border-color:#e6b45c}
+.ac-win .side-ops .shint{color:#666c77;font-size:10.5px;text-align:center;line-height:1.4}
 .ac-win .ac-foot{display:flex;align-items:center;gap:12px;padding:8px 14px;border-top:1px solid #2e3037;
   flex:0 0 auto;min-height:56px}
 .ac-win .ac-info{flex:1;display:flex;align-items:center;gap:10px;min-width:0}

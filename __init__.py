@@ -21,7 +21,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
@@ -736,6 +736,51 @@ try:
         if not ok:
             return web.json_response({"ok": False, "error": err}, status=400)
         return web.json_response({"ok": True, "value": st[key]})
+
+    @PromptServer.instance.routes.post("/anima_char/bulk")
+    async def _char_bulk(request):
+        """集合的批量增删（一次加入一个分类，最多几千条）。
+
+        用途：「把当前分类全部加入勾选池」—— 角色库两千多个，逐个点 ＋ 不现实。
+        和单条 toggle 一样是「读最新 → 改 → 写回」，区别只在一次处理多个 tag。
+        顺序与单条一致：新加的排在前面。
+        """
+        from aiohttp import web
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"ok": False, "error": "请求体必须是 JSON"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"ok": False, "error": "请求体必须是 JSON 对象"}, status=400)
+        key = str(payload.get("key") or "").strip()
+        if key not in _char_state.LIST_KEYS:
+            return web.json_response({"ok": False, "error": f"key 非法: {key}"}, status=400)
+        raw = payload.get("tags")
+        if not isinstance(raw, list):
+            return web.json_response({"ok": False, "error": "tags 必须是数组"}, status=400)
+        tags = []
+        for t in raw[:20000]:                    # 全库 2556，留足余量
+            s = str(t or "").strip().lower()
+            if s and s not in tags:
+                tags.append(s)
+        if not tags:
+            return web.json_response({"ok": False, "error": "tags 为空"}, status=400)
+        on = bool(payload.get("on"))
+        st = _char_state.load_state()
+        cur = list(st.get(key) or [])
+        if on:
+            have = set(cur)
+            add = [t for t in tags if t not in have]
+            st[key] = add + cur
+        else:
+            drop = set(tags)
+            st[key] = [t for t in cur if t not in drop]
+        st[key] = st[key][:5000]
+        ok, err = _char_state.save_state(st)
+        if not ok:
+            return web.json_response({"ok": False, "error": err}, status=400)
+        return web.json_response({"ok": True, "value": st[key],
+                                  "changed": len(tags) if on else len(cur) - len(st[key])})
 
     @PromptServer.instance.routes.get("/anima_char/thumb/{tag}")
     async def _char_thumb(request):
