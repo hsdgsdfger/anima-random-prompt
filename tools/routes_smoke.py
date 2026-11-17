@@ -124,7 +124,7 @@ pf = {"GET": ["/prompt_forge/library", "/prompt_forge/scene_meta", "/prompt_forg
       "POST": ["/prompt_forge/roll", "/prompt_forge/userdata"]}
 cc = {"GET": ["/anima_char/library", "/anima_char/index", "/anima_char/char/{tag}",
                "/anima_char/state", "/anima_char/thumb/{tag}"],
-      "POST": ["/anima_char/state", "/anima_char/thumb/{tag}",
+      "POST": ["/anima_char/state", "/anima_char/toggle", "/anima_char/thumb/{tag}",
                "/anima_char/char/save", "/anima_char/char/delete"]}
 want = {(k, p) for k, ps in pf.items() for p in ps} | {(k, p) for k, ps in cc.items() for p in ps}
 ok(f"共 {len(want)} 个方法全部注册（实际 {len(routes)}）", set(routes) == want,

@@ -96,7 +96,9 @@ let pendingBody = null;
 
 function saveState(delay = 250) {
   if (stt.state !== "done") return;
-  pendingBody = JSON.stringify(st.state);
+  // 只发这一份自己负责的字段：集合已经走 toggle 逐条改了，
+  // 整份 state 发上去会把别处刚改的收藏冲掉。
+  pendingBody = JSON.stringify({ weights: st.state.weights, settings: st.state.settings });
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flushState, delay);
 }
@@ -139,13 +141,34 @@ if (typeof window !== "undefined") {
 
 /* ---------- 写回节点 ---------- */
 function widgetOf(name) {
-  return st.node?.widgets?.find((w) => w.name === name);
+  const real = (typeof isPromptForge === "function" && isPromptForge())
+    ? (PF_WIDGET_ALIAS[name] || name) : name;
+  return st.node?.widgets?.find((w) => w.name === real);
 }
+/* 合并后这个面板同时服务两个节点：
+   AnimaCharacterPicker（mode / outfit_id / include_outfit）
+   PromptForgeRandom（role_mode / char_outfit_id / outfit_follow）
+   同一个动作要写到各自对应的控件上。 */
+function isPromptForge() {
+  return String(st.node?.type || "") === "PromptForgeRandom";
+}
+
+const PF_WIDGET_ALIAS = {
+  mode: "role_mode",
+  outfit_id: "char_outfit_id",
+  include_outfit: "outfit_follow",
+  include_appearance: "appearance_follow",
+  work_filter: "role_works",
+};
+
 function setWidget(name, value) {
-  const w = widgetOf(name);
+  const real = isPromptForge() ? (PF_WIDGET_ALIAS[name] || name) : name;
+  const w = widgetOf(real);
   if (!w) return;
   w.value = value;
   if (w.inputEl) w.inputEl.value = value;
+  // 合并后 role_mode 不在 required 前几位，触发一下回调让节点重算大小
+  try { w.callback?.(value); } catch {}
   st.node.setDirtyCanvas?.(true, true);
 }
 function pickOne(tag) {
@@ -164,37 +187,53 @@ function pickOne(tag) {
   renderCards();
   toast(`已选：${c.zh || c.name}`);
 }
+/* 集合的增删走 /anima_char/toggle：服务端读最新再改一条，
+   不会被另一个标签页的旧快照整存覆盖（用户 2026-11-17 报收藏莫名少了）。 */
+function pushToggle(key, tag, on) {
+  jfetch("/anima_char/toggle", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, tag, on }),
+  }).then((r) => r.json()).then((j) => {
+    if (j.ok && Array.isArray(j.value)) st.state[key] = j.value;
+  }).catch((e) => toast(`保存失败：${e.message || e}`, false));
+}
+
 function toggleFav(tag) {
-  const i = st.state.favorites.indexOf(tag);
-  if (i >= 0) st.state.favorites.splice(i, 1); else st.state.favorites.push(tag);
-  saveState();
+  const on = !st.state.favorites.includes(tag);
+  st.state.favorites = on
+    ? [tag, ...st.state.favorites.filter((x) => x !== tag)]
+    : st.state.favorites.filter((x) => x !== tag);
+  pushToggle("favorites", tag, on);
   renderTabs();
   renderCards();
 }
 function toggleBan(tag) {
-  const i = st.state.excluded.indexOf(tag);
-  if (i >= 0) st.state.excluded.splice(i, 1);
-  else {
-    st.state.excluded.push(tag);
-    const p = st.state.picked.indexOf(tag);
-    if (p >= 0) st.state.picked.splice(p, 1);
+  const on = !st.state.excluded.includes(tag);
+  st.state.excluded = on
+    ? [tag, ...st.state.excluded.filter((x) => x !== tag)]
+    : st.state.excluded.filter((x) => x !== tag);
+  if (on) {
+    st.state.picked = st.state.picked.filter((x) => x !== tag);
+    pushToggle("picked", tag, false);
   }
-  saveState();
+  pushToggle("excluded", tag, on);
   renderTabs();
   renderCards();
   renderInfo();
 }
 function togglePick(tag) {
-  const i = st.state.picked.indexOf(tag);
-  if (i >= 0) {
-    st.state.picked.splice(i, 1);
-    delete st.state.weights[tag];
-  } else {
-    st.state.picked.push(tag);
+  const on = !st.state.picked.includes(tag);
+  st.state.picked = on
+    ? [tag, ...st.state.picked.filter((x) => x !== tag)]
+    : st.state.picked.filter((x) => x !== tag);
+  if (on) {
     st.state.weights[tag] = st.state.weights[tag] || 1;
+  } else {
+    delete st.state.weights[tag];
   }
   if (st.state.picked.length) setWidget("mode", "多选加权");
-  saveState();
+  pushToggle("picked", tag, on);
+  saveState();          // weights 变了，单独存一次（只发 weights/settings）
   renderTabs();
   renderCards();
   renderInfo();

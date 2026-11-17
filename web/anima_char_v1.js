@@ -36,12 +36,14 @@ function localize(node) {
 app.registerExtension({
   name: "AnimaCharacterPicker.Panel",
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData.name !== "AnimaCharacterPicker") return;
+    const isCharNode = nodeData.name === "AnimaCharacterPicker";
+    const isForgeNode = nodeData.name === "PromptForgeRandom";
+    if (!isCharNode && !isForgeNode) return;
 
     const origCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
       const r = origCreated ? origCreated.apply(this, arguments) : undefined;
-      localize(this);
+      if (isCharNode) localize(this);      // 提示词节点的中文标签由 prompt_forge_v6.js 负责
       const btn = this.addWidget("button", "🎭 打开角色库", null, () => openPanel(this));
       btn.serialize = false;
       this.setSize([Math.max(this.size[0], 340), (this.size[1] || 300) + 26]);
@@ -51,7 +53,7 @@ app.registerExtension({
     const origConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function () {
       const r = origConfigure ? origConfigure.apply(this, arguments) : undefined;
-      localize(this);
+      if (isCharNode) localize(this);
       return r;
     };
   },

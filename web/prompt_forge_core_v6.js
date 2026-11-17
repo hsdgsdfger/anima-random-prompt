@@ -1539,6 +1539,19 @@ function openPanel(node) {
   redoBtn.onclick = doRedo;
   head.appendChild(undoBtn); head.appendChild(redoBtn);
 
+  // 角色库：合并后同一个节点就能选人，2471 张卡片另开窗口看（这里塞不下）
+  const charBtn = el("div", "icobtn", "🎭");
+  charBtn.title = "打开角色库（选人 / 收藏 / 勾选池 / 限定作品）";
+  charBtn.onclick = async () => {
+    try {
+      const mod = await import("./anima_char_panel_v1.js");
+      mod.openPanel(st.node);
+    } catch (e) {
+      toast(`角色库打不开：${e.message || e}`, false);
+    }
+  };
+  head.appendChild(charBtn);
+
   const setBtn = el("div", "icobtn", "⚙");
   setBtn.title = "设置（档位分布 / any 配比 / 导入导出）";
   setBtn.onclick = openSettings;

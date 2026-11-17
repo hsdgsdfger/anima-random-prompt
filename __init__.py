@@ -21,14 +21,17 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.1.16"
+__version__ = "0.2.0"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
 _LEVEL_WITH_ZH = [f"{k} · {LEVEL_ZH[k]}" if k != "any" else "any · 不限" for k in LEVEL_CHOICES]
 _KEY_OF_LABEL = {label: key for key, label in zip(LEVEL_CHOICES, _LEVEL_WITH_ZH)}
-_ROLE_LABELS = ["不指定", "随机", "指定"]
-_ROLE_KEYS = {"不指定": "none", "随机": "random", "指定": "specified"}
+# 追加「收藏随机 / 多选加权」：这两个直接读角色库的收藏与勾选池，
+# 和面板是同一份数据 —— 合并前必须靠另一个节点，现在一个节点就够。
+_ROLE_LABELS = ["不指定", "随机", "指定", "收藏随机", "多选加权"]
+_ROLE_KEYS = {"不指定": "none", "随机": "random", "指定": "specified",
+              "收藏随机": "favorites", "多选加权": "weighted"}
 _SCENE_LABELS = ["场景成套 · 现实逻辑", "自由随机 · 全库乱抽"]
 _SCENE_KEYS = {_SCENE_LABELS[0]: "scene", _SCENE_LABELS[1]: "free", "scene": "scene", "free": "free"}
 def _write_png_meta(extra_pnginfo, unique_id, key, payload):
@@ -105,6 +108,9 @@ class PromptForgeRandom:
                 "outfit_follow": ("BOOLEAN", {"default": False,
                                               "tooltip": "角色输入里带服装时，服装与配饰不再随机（交给角色输入）；角色没带服装则照常随机。泳池/海边/温泉这类场景仍由场景决定服装"}),
             },
+                # 追加在末尾：合并角色库后，指定用角色的哪一套服装
+                "char_outfit_id": ("STRING", {"default": "", "multiline": False,
+                                              "tooltip": "用角色的哪一套服装（面板点套装自动填）；留空 = 第一套。仅在「服装跟随角色」打开时生效"}),
             # 不占控件位，ComfyUI 会把这两个塞给 run()：
             # 出图后把实际用的提示词写进 PNG，排查「这张为什么这样」时直接读图
             "hidden": {
@@ -129,7 +135,7 @@ class PromptForgeRandom:
                    quality_prefix="", artist_on=False, negative_on=True, extra_body="",
                    quality_on=True, scene_mode=_SCENE_LABELS[0], template_override="",
                    random_each_run=True, override_mode="直通", role_prompt="",
-                   appearance_follow=True, outfit_follow=False):
+                   appearance_follow=True, outfit_follow=False, char_outfit_id=""):
         override = str(template_override or "").strip()
         direct = _OVERRIDE_KEYS.get(override_mode, "direct") == "direct"
         if not override and (int(seed) < 0 or bool(random_each_run)):
@@ -139,7 +145,8 @@ class PromptForgeRandom:
                                         artist_on, negative_on, extra_body, quality_on,
                                         scene_mode, template_override, random_each_run,
                                         override_mode, role_prompt,
-                                        appearance_follow, outfit_follow))
+                                        appearance_follow, outfit_follow,
+                                        char_outfit_id))
         # 覆盖直通不读档位配置，配置版本无须纳入；其余情况必须纳入（REQ-109）
         if not (override and direct):
             _, version = _settings_mod.snapshot()
@@ -150,7 +157,7 @@ class PromptForgeRandom:
             role_name, role_works, quality_prefix, artist_on, negative_on, extra_body,
             quality_on=True, scene_mode=_SCENE_LABELS[0], template_override="",
             random_each_run=True, override_mode="直通", role_prompt="",
-            appearance_follow=True, outfit_follow=False,
+            appearance_follow=True, outfit_follow=False, char_outfit_id="",
             extra_pnginfo=None, unique_id=None):
         key = _KEY_OF_LABEL.get(level, level)
         if key not in LEVEL_NUM:
@@ -177,6 +184,7 @@ class PromptForgeRandom:
             settings=cfg,
             appearance_follow=bool(appearance_follow),
             outfit_follow=bool(outfit_follow),
+            char_outfit_id=str(char_outfit_id or ""),
         )
         # 多段输出收成一正一负：档位与抽样依据不再占口，改打到控制台日志
         try:
@@ -199,6 +207,7 @@ class PromptForgeRandom:
                        "override_mode": override_mode,
                        "appearance_follow": bool(appearance_follow),
                        "outfit_follow": bool(outfit_follow),
+                       "char_outfit_id": char_outfit_id,
                        "role_prompt": role_prompt},
         })
         return (res["positive"], res["negative"])
@@ -682,10 +691,47 @@ try:
             payload = await request.json()
         except Exception:
             return web.json_response({"ok": False, "error": "请求体必须是 JSON"}, status=400)
-        ok, err = _char_state.save_state(payload)
+        # 只覆盖 payload 里真的带了的字段：整存会把别人刚写的收藏冲掉
+        # （两个标签页各开一个面板时，后保存的那个拿着旧快照全量覆盖）。
+        st = _char_state.load_state()
+        for k in _char_state.LIST_KEYS + ("weights", "settings"):
+            if k in payload:
+                st[k] = payload[k]
+        ok, err = _char_state.save_state(st)
         if not ok:
             return web.json_response({"ok": False, "error": err}, status=400)
         return web.json_response({"ok": True})
+
+    @PromptServer.instance.routes.post("/anima_char/toggle")
+    async def _char_toggle(request):
+        """收藏 / 勾选池 / 排除 的单条增删。
+
+        这三个是集合，走「读最新 → 改一条 → 写回」，不会像全量保存那样
+        拿旧快照覆盖掉别处刚做的改动。
+        """
+        from aiohttp import web
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"ok": False, "error": "请求体必须是 JSON"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"ok": False, "error": "请求体必须是 JSON 对象"}, status=400)
+        key = str(payload.get("key") or "").strip()
+        tag = str(payload.get("tag") or "").strip().lower()
+        if key not in _char_state.LIST_KEYS:
+            return web.json_response({"ok": False, "error": f"key 非法: {key}"}, status=400)
+        if not tag:
+            return web.json_response({"ok": False, "error": "tag 不能为空"}, status=400)
+        on = bool(payload.get("on"))
+        st = _char_state.load_state()
+        cur = [x for x in (st.get(key) or []) if x != tag]
+        if on:
+            cur.insert(0, tag)
+        st[key] = cur[:5000]
+        ok, err = _char_state.save_state(st)
+        if not ok:
+            return web.json_response({"ok": False, "error": err}, status=400)
+        return web.json_response({"ok": True, "value": st[key]})
 
     @PromptServer.instance.routes.get("/anima_char/thumb/{tag}")
     async def _char_thumb(request):

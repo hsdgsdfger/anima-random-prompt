@@ -172,23 +172,124 @@ def _subjects(lv):
     return pool or drawable("base", lv)
 
 
+def _char_pool():
+    """角色池统一走 picker.library()：2471 个，带外观与服装预设。
+
+    以前这里读 tags.json 里那 1401 个老记录（只有 tag/auto，没有服装），
+    和角色库面板是两套数据 —— 用户设了收藏、勾选池，随机却完全不受影响。
+    """
+    try:
+        from . import picker as _pk
+        return _pk.library()["characters"]
+    except Exception:
+        return load_data().get("characters") or []
+
+
+def char_appearance(char):
+    """取一个角色的外观标签（兼容两套结构：老的 auto / 新的 appearance 桶）。"""
+    auto = char.get("auto")
+    if auto:
+        return [str(a.get("en") if isinstance(a, dict) else a) for a in auto[:8]]
+    ap = char.get("appearance") or {}
+    out = []
+    for k in ("hair_color", "hair_style", "eyes", "face", "body", "extras"):
+        out.extend(str(x) for x in (ap.get(k) or []))
+    return out[:8]
+
+
+def char_outfit(char, outfit_id=""):
+    """取角色的一套服装标签；装备了一套就只有那一套（其余自动失效）。"""
+    outs = char.get("outfits") or []
+    if not outs:
+        return []
+    if outfit_id:
+        for o in outs:
+            if str(o.get("id")) == str(outfit_id):
+                return [str(x) for x in (o.get("tags") or [])]
+    return [str(x) for x in (outs[0].get("tags") or [])]
+
+
 def pick_character(rng, role_mode, role_name, role_works):
-    chars = load_data()["characters"]
-    if role_mode == "specified" and role_name.strip():
-        q = role_name.strip().lower()
+    """role_mode: none / random / specified / favorites / weighted。
+
+    favorites = 只在收藏里抽；weighted = 只在勾选池里按权重抽。
+    两者都直接读角色库的 userdata 状态，和面板是同一份数据。
+    """
+    chars = _char_pool()
+    if not chars:
+        return None
+    name = str(role_name or "").strip().lower()
+    if role_mode == "specified" and name:
         hits = [c for c in chars
-                if q in c["tag"].lower() or q in c["name"].lower() or q in c["zh"].lower()]
-        if hits:
-            return hits[0]
+                if name in str(c.get("tag") or "").lower()
+                or name in str(c.get("name") or "").lower()
+                or name in str(c.get("zh") or "").lower()]
+        return hits[0] if hits else None
+    if role_mode in ("none", ""):
         return None
-    if role_mode != "random":
-        return None
+
     pool = chars
+    if role_mode in ("favorites", "weighted"):
+        try:
+            from . import char_state as _cs
+            st = _cs.load_state()
+            key = "favorites" if role_mode == "favorites" else "picked"
+            allow = [str(x) for x in (st.get(key) or [])]
+            if not allow:
+                return None
+            pool = [c for c in chars if c["tag"] in set(allow)]
+        except Exception:
+            return None
+        if not pool:
+            return None
+
     works = [w.strip().lower() for w in re.split(r"[|,，]", role_works or "") if w.strip()]
     if works:
-        pool = [c for c in chars
-                if any(w in c["game"].lower() or w in c["gameTag"].lower() for w in works)]
+        zh_map = {}
+        try:
+            from . import picker as _pk
+            zh_map = _pk.work_zh_map()
+        except Exception:
+            pass
+        def _match(c):
+            wid = str(c.get("work") or "").lower()
+            blob = " ".join((wid, zh_map.get(wid, ""), str(c.get("trigger") or "").lower()))
+            return any(w in blob for w in works)
+        pool = [c for c in pool if _match(c)]
+        if not pool:
+            return None
+
+    if role_mode == "weighted":
+        try:
+            from . import char_state as _cs
+            w = (_cs.load_state().get("weights") or {})
+            return _pick_weighted(pool, w, rng)
+        except Exception:
+            pass
     return rng.choice(pool) if pool else None
+
+
+def _pick_weighted(pool, weights, rng):
+    """按面板里设的权重抽；没设权重一律 1.0。"""
+    total = 0.0
+    vals = []
+    for c in pool:
+        try:
+            w = float(weights.get(c["tag"], 1.0))
+        except (TypeError, ValueError):
+            w = 1.0
+        w = max(0.0, w)
+        vals.append(w)
+        total += w
+    if total <= 0:
+        return rng.choice(pool)
+    r = rng.random() * total
+    acc = 0.0
+    for c, w in zip(pool, vals):
+        acc += w
+        if r < acc:
+            return c
+    return pool[-1]
 
 
 # ---------------------------------------------------------------- 档位抽样
@@ -287,7 +388,8 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
              role_mode="none", role_name="", role_works="", quality_prefix="masterpiece, best quality",
              artist_on=False, extra_body="", negative_on=True, scene_mode="scene",
              override_text="", override_mode="direct", role_prompt="", settings=None,
-             appearance_follow=True, outfit_follow=False, scene_hint=""):
+             appearance_follow=True, outfit_follow=False, scene_hint="",
+             char_outfit_id=""):
     sel_key = str(level)
     if sel_key not in LEVEL_NUM:
         sel_key = "sfw"
@@ -388,7 +490,9 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
                               ext_subjects, ext_others, ext_rejected,
                               self_appear=("hair" in follow),
                               clothing_follow=("clothing" in follow),
-                              scene_hint=scene_hint)
+                              scene_hint=scene_hint,
+                              outfit_follow=outfit_follow,
+                              char_outfit_id=char_outfit_id)
         if res:
             return res
         # 场景拼不出来（几乎不会发生）就退回自由随机，保证节点永远有输出
@@ -437,12 +541,18 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     else:
         char = pick_character(rng, role_mode, role_name, role_works)
         if char:
-            role_from = "词库"
-            add("character", {"en": char["tag"], "zh": char["zh"], "lv": 0})
-            for a in char.get("auto", [])[:6]:
-                if tag_level(a["en"]) <= tv:
-                    add("character", {"en": a["en"], "zh": a.get("zh", ""),
-                                      "lv": tag_level(a["en"])})
+            role_from = "角色库"
+            add("character", {"en": char["tag"], "zh": char.get("zh", ""), "lv": 0})
+            for en in char_appearance(char):
+                if tag_level(en) <= tv:
+                    add("character", {"en": en, "zh": "", "lv": tag_level(en)})
+            # 服装跟随角色：把角色那套塞进来，并把服装槽关掉
+            if outfit_follow:
+                outfit = [t for t in char_outfit(char, char_outfit_id)]
+                if outfit:
+                    for en in outfit:
+                        add("character", {"en": en, "zh": "", "lv": tag_level(en)})
+                    follow.update(["clothing", "accessory"])
 
     # 画师（可选）
     if artist_on:
@@ -722,7 +832,7 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
                     role_mode, role_name, role_works, quality_prefix, artist_on,
                     extra_body, negative_on, seed, ext_subjects=None, ext_others=None,
                     ext_rejected=0, self_appear=True, clothing_follow=False,
-                    scene_hint=""):
+                    scene_hint="", outfit_follow=False, char_outfit_id=""):
     """场景成套路径：环境/季节/服装/道具/姿势绑在一个包里，出来的串自带现实逻辑。"""
     try:
         from . import scenes
@@ -758,9 +868,13 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
         char_tags = [(t, 0) for t in ext_others]
     elif char:
         char_tags.append((char["tag"], 0))
-        for a in char.get("auto", [])[:6]:
-            if scenes.level_of(a["en"]) <= tv:
-                char_tags.append((a["en"], scenes.level_of(a["en"])))
+        for en in char_appearance(char):
+            if scenes.level_of(en) <= tv:
+                char_tags.append((en, scenes.level_of(en)))
+        if outfit_follow:
+            for en in char_outfit(char, char_outfit_id):
+                if scenes.level_of(en) <= tv:
+                    char_tags.append((en, scenes.level_of(en)))
 
     ordered = list(items)
     if ext_subjects:

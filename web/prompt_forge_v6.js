@@ -23,6 +23,8 @@ const LABELS = {
   template_override: "模板覆盖文本",
   random_each_run: "每次运行重抽",
   override_mode: "覆盖模式",
+  appearance_follow: "外观跟随角色",
+  outfit_follow: "服装跟随角色",
 };
 
 // 输入槽中文名（forceInput 不出 widget，靠 socket label 显示）
