@@ -55,26 +55,26 @@ ROLES = [
     # ── 原神 · 其他 ─────────────────────────────────────
     ("skirk_(genshin_impact)", "丝柯克", G, "silver hair", "blue eyes", 15000),
     ("columbina_(genshin_impact)", "哥伦比娅", G, "white hair", "pink eyes", 16000),
-    ("aloy_(genshin_impact)", "埃洛伊", G, "red hair", "yellow eyes", 5000),
+    ("aloy_(horizon)", "埃洛伊", "horizon zero dawn", "red hair", "yellow eyes", 5000),
     # ── 绝区零 ──────────────────────────────────────────
     ("rina_(zenless_zone_zero)", "亚历山德丽娜", Z, "black hair", "purple eyes", 10000),
     ("lucy_(zenless_zone_zero)", "露西", Z, "blonde hair", "blue eyes", 9000),
     # ── 崩坏3 ──────────────────────────────────────────
     ("kallen_kaslana", "卡莲·卡斯兰娜", H, "white hair", "blue eyes", 12000),
     ("rosalia_(honkai_impact)", "萝莎莉娅·阿琳", H, "pink hair", "blue eyes", 9000),
-    ("liliya_(honkai_impact)", "莉莉娅·阿琳", H, "blue hair", "blue eyes", 9000),
+    ("liliya_olenyeva", "莉莉娅·阿琳", H, "blue hair", "blue eyes", 9000),
     ("pardofelis_(honkai_impact)", "帕朵菲莉丝", H, "brown hair", "blue eyes", 10000),
-    ("vill-v_(honkai_impact)", "维尔薇", H, "brown hair", "red eyes", 9000),
-    ("griseo_(honkai_impact)", "格蕾修", H, "blue hair", "pink eyes", 8000),
+    ("vill-v", "维尔薇", H, "brown hair", "red eyes", 9000),
+    ("griseo", "格蕾修", H, "blue hair", "pink eyes", 8000),
     ("aponia_(honkai_impact)", "阿波尼亚", H, "purple hair", "purple eyes", 9000),
     ("eden_(honkai_impact)", "伊甸", H, "brown hair", "gold eyes", 8000),
     ("cocolia_(honkai_impact)", "可可利亚", H, "blonde hair", "blue eyes", 6000),
     ("cecilia_schariac", "塞西莉亚·沙尼亚特", H, "white hair", "blue eyes", 7000),
     ("susannah_(honkai_impact)", "苏莎娜", H, "orange hair", "green eyes", 6000),
     ("shigure_kirara_(honkai_impact)", "时雨绮罗", H, "black hair", "red eyes", 6000),
-    ("carole_pepper", "卡萝尔·佩珀", H, "blonde hair", "blue eyes", 5000),
-    ("timido_cang", "缇米朵·坎", H, "blonde hair", "blue eyes", 5000),
-    ("tesla_(honkai_impact)", "特斯拉", H, "blonde hair", "blue eyes", 6000),
+    ("carole_peppers", "卡萝尔·佩珀", H, "blonde hair", "blue eyes", 5000),
+    ("timido_cute", "缇米朵·坎", H, "blonde hair", "blue eyes", 5000),
+    ("frederica_nikola_tesla", "特斯拉", H, "blonde hair", "blue eyes", 6000),
     ("einstein_(honkai_impact)", "爱因斯坦", H, "blue hair", "blue eyes", 6000),
 ]
 
@@ -99,12 +99,11 @@ def main():
         if tag in have:
             skipped.append((tag, "已在主库"))
             continue
-        if "(" in tag:
-            name = tag.split("(")[0].replace("_", " ").strip()
-            trigger = f"{name} ({work}), {work}"
-        else:
-            name = tag.replace("_", " ")
-            trigger = f"{name}, {work}"
+        # danbooru 的 trigger 就是把 slug 里的下划线换成空格，括号内容原样保留：
+        #   mavuika_(genshin_impact) -> "mavuika (genshin impact), genshin impact"
+        #   aloy_(horizon)           -> "aloy (horizon), horizon zero dawn"
+        name = tag.replace("_", " ").strip()
+        trigger = f"{name}, {work}"
         ap = {}
         if hair:
             ap["hair_color"] = [hair]

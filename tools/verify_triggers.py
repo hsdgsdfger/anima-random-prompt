@@ -26,6 +26,8 @@ ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, "data")
 
 API = "https://safebooru.org/index.php?page=dapi&s=post&q=index"
+# animadex 的 JSON 接口：角色库 3.6 万条，返回 slug/trigger/tags/thumb_url
+ADEX_API = "https://animadex.net/api/characters/search"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
@@ -58,6 +60,20 @@ def _get(url, timeout=12, retry=3):
     raise last
 
 
+def adex_lookup(tag):
+    """返回 animadex 上的匹配条数（slug 完全一致算命中）。-1 表示请求失败。"""
+    q = urllib.parse.urlencode({"q": tag, "limit": 8})
+    try:
+        raw = _get(f"{ADEX_API}?{q}")
+        data = json.loads(raw)
+    except Exception:
+        return -1
+    for r in data.get("results") or []:
+        if r.get("slug") == tag:
+            return int(r.get("count") or 0) or 1
+    return 0
+
+
 def tag_count(tag, opener=None):
     """safebooru.org 上这个 tag 的帖子数。-1 表示查询失败。"""
     q = urllib.parse.urlencode({"tags": tag, "limit": 1})
@@ -75,6 +91,8 @@ def main():
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--workers", type=int, default=5)
+    ap.add_argument("--source", default="safebooru", choices=("safebooru", "animadex"),
+                    help="safebooru 快但限速狠；animadex 更准但 1 秒/次")
     ap.add_argument("--sleep", type=float, default=0.4)
     args = ap.parse_args()
 
@@ -90,12 +108,13 @@ def main():
     rows = []
 
     def one(c):
-        # trigger 第一段是角色（空格写法），查站上要换成下划线写法
-        parts = [p.strip() for p in str(c.get("trigger") or "").split(",") if p.strip()]
-        role_tag = parts[0] if parts else c["tag"]
-        query = role_tag.replace(" ", "_")
+        # ⚠️ 必须用 c["tag"]（规范 tag，形如 `ganyu_(genshin_impact)`）去查，
+        #    不能用 trigger 的第一段 —— trigger 是给人看的简写（`ganyu`），
+        #    站点 tag 表里没有它，会全部返回 0（第一版就栽在这，529 个假阴性）。
         time.sleep(args.sleep)
-        return c, role_tag, tag_count(query)
+        if args.source == "animadex":
+            return c, c["tag"], adex_lookup(c["tag"])
+        return c, c["tag"], tag_count(c["tag"])
 
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=max(1, min(8, args.workers))) as pool:

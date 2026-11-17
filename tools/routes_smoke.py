@@ -119,7 +119,8 @@ r = call("GET", "/anima_char/library")
 ok("返回 works + characters", "works" in r.payload and "characters" in r.payload)
 ok(f"角色数 {len(r.payload['characters'])}（2432 内置 + 39 补充）",
    len(r.payload["characters"]) == 2471, str(len(r.payload["characters"])))
-ok(f"作品数 {len(r.payload['works'])}", len(r.payload["works"]) == 287)
+ok(f"作品数 {len(r.payload['works'])}（287 + 埃洛伊带出的地平线）",
+   len(r.payload["works"]) == 288, str(len(r.payload["works"])))
 
 print("\n[角色库 /state]")
 body = {"favorites": ["hatsune_miku"], "excluded": [], "picked": [],

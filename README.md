@@ -254,9 +254,11 @@ python tools/fetch_thumbs.py --only mihoyo
 - `build_v6_templates.py` 只取 V6 的 `nsfw`（跨槽位配方）与 `pose`（姿势场景）两组，
   排除含男性词的条目；想连特写/构图/武器一起要，改 `KEEP_GROUPS`。
 - `add_mihoyo.py` 补米哈游四款游戏缺的女性角色，已有 tag 自动跳过，可反复跑。
-- `fetch_thumbs.py` 按 tag 去 safebooru 抓预览图（缩略图，jpg，不依赖 Pillow）。
-  米哈游那批已抓到 30/39，剩下 9 个源站没收录，面板显示占位。
-- `verify_triggers.py` 查每个角色的 trigger tag 在 safebooru 上是否真的存在。
+- `fetch_thumbs.py` 补预览图：默认走 [animadex.net](https://animadex.net) 的 JSON 接口
+  拿角色记录里的 `thumb_url`（webp，约 17 KB）；也可 `--source safebooru` 走旧链路。
+  米哈游那批已抓到 37/39，剩 `yumemizuki_mizuki` / `shigure_kirara` 两处源站未收录。
+- `verify_triggers.py` 查 trigger tag 是否真实存在，支持
+  `--source animadex`（准）/ `--source safebooru`（快）两种。
 
 ### 数据分层（重要）
 

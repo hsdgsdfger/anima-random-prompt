@@ -29,7 +29,10 @@ DATA = os.path.join(ROOT, "data")
 THUMBS = os.path.join(ROOT, "thumbs")
 CUSTOM = os.path.join(ROOT, "custom_thumbs")
 
-# safebooru.org 的 dapi：实测可直连；safebooru.donmai.us 会被 Cloudflare 403
+# animadex.net 的 JSON 接口：一次请求就能拿到角色记录，里面直接带 thumb_url。
+# 比 safebooru 快一个数量级（0.7s vs 60s），而且是 webp，不用转格式。
+ADEX_API = "https://animadex.net/api/characters/search"
+# 备用：safebooru.org 的 dapi（.us 那个域名有 Cloudflare 403）
 API = "https://safebooru.org/index.php?page=dapi&s=post&q=index"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
@@ -82,6 +85,22 @@ def _get(opener, url, timeout=12, retry=3, referer=None):
     raise last
 
 
+def fetch_animadex(opener, tag):
+    """animadex：搜角色 → 找 slug 完全匹配的那条 → 返回 (thumb_url, None)。"""
+    q = urllib.parse.urlencode({"q": tag, "limit": 8})
+    raw = _get(opener, f"{ADEX_API}?{q}", timeout=20)
+    data = json.loads(raw.decode("utf-8", "ignore"))
+    results = data.get("results") or []
+    exact = [r for r in results if r.get("slug") == tag]
+    hit = exact[0] if exact else (results[0] if results else None)
+    if not hit:
+        return None, None
+    url = hit.get("thumb_url") or hit.get("img_url")
+    if not url:
+        return None, None
+    return url, hit.get("count")
+
+
 def fetch_post(opener, tag):
     """返回 (图片 url, 原图宽高)；没有结果返回 (None, None)。"""
     q = urllib.parse.urlencode({"tags": tag_to_query(tag), "limit": 3})
@@ -104,12 +123,18 @@ def download(opener, url):
     return _get(opener, url, timeout=20, referer="https://safebooru.org/")
 
 
-def save_jpg(raw, out_path):
-    if raw[:3] != b"\xff\xd8\xff":
-        raise RuntimeError("返回的不是 JPEG")
+def save_img(raw, out_path):
+    """按文件头判断格式，webp / jpeg 都收。"""
+    ok = raw[:4] == b"RIFF" and raw[8:12] == b"WEBP" or raw[:3] == b"\xff\xd8\xff"
+    if not ok:
+        raise RuntimeError("返回的不是图片")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    ext = ".webp" if raw[:4] == b"RIFF" else ".jpg"
+    if not out_path.endswith(ext):
+        out_path = os.path.splitext(out_path)[0] + ext
     with open(out_path, "wb") as f:
         f.write(raw)
+    return out_path
 
 
 def main():
@@ -121,6 +146,8 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="最多抓几个（试跑用）")
     ap.add_argument("--sleep", type=float, default=0.5, help="每个线程内的请求间隔秒数")
     ap.add_argument("--workers", type=int, default=4, help="并发线程数，默认 4")
+    ap.add_argument("--source", default="animadex", choices=("animadex", "safebooru"),
+                    help="图源，默认 animadex（快且直接给 webp）")
     args = ap.parse_args()
 
     os.makedirs(THUMBS, exist_ok=True)
@@ -132,7 +159,7 @@ def main():
     for c in chars:
         tag = c["tag"]
         safe = "".join(ch for ch in tag.lower() if ch.isalnum() or ch in "_-")
-        target = os.path.join(THUMBS, safe + ".jpg")
+        target = os.path.join(THUMBS, safe + (".webp" if args.source == "animadex" else ".jpg"))
         if not args.all and os.path.exists(target) and os.path.getsize(target) > 0:
             continue
         todo.append((tag, target))
@@ -151,14 +178,21 @@ def main():
     failed = []
     lock_state = {"done": 0}
 
+    use_adex = args.source == "animadex"
+
     def one(item):
         tag, target = item
         try:
-            url, _size = fetch_post(opener, tag)
-            if not url:
-                raise RuntimeError("safebooru 没有这张 tag 的图")
-            raw = download(opener, url)
-            save_jpg(raw, target)
+            if use_adex:
+                url, _cnt = fetch_animadex(opener, tag)
+                if not url:
+                    raise RuntimeError("animadex 没有这个角色")
+            else:
+                url, _size = fetch_post(opener, tag)
+                if not url:
+                    raise RuntimeError("safebooru 没有这张 tag 的图")
+            raw = _get(opener, url, timeout=25) if use_adex else download(opener, url)
+            save_img(raw, target)
             return tag, None
         except Exception as exc:
             return tag, str(exc)[:80]
