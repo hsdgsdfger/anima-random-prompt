@@ -117,7 +117,8 @@ ok(f"共 {len(want)} 个方法全部注册（实际 {len(routes)}）", set(route
 print("\n[角色库 /library]")
 r = call("GET", "/anima_char/library")
 ok("返回 works + characters", "works" in r.payload and "characters" in r.payload)
-ok(f"角色数 {len(r.payload['characters'])}", len(r.payload["characters"]) == 2432)
+ok(f"角色数 {len(r.payload['characters'])}（2432 内置 + 39 补充）",
+   len(r.payload["characters"]) == 2471, str(len(r.payload["characters"])))
 ok(f"作品数 {len(r.payload['works'])}", len(r.payload["works"]) == 287)
 
 print("\n[角色库 /state]")

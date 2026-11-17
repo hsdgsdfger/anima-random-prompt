@@ -119,6 +119,33 @@ def check_templates(bundle_ids):
     return len(items)
 
 
+def check_extra_characters():
+    """补充角色（米哈游补齐）：tag 唯一、有中文名与作品。"""
+    path = os.path.join(DATA, "characters_extra.json")
+    if not os.path.exists(path):
+        return 0
+    with open(path, encoding="utf-8") as f:
+        items = json.load(f)
+    base = load("characters.json")
+    have = {c["tag"] for c in base.get("characters") or []}
+    seen = set()
+    for c in items:
+        tag = str(c.get("tag") or "")
+        if not tag:
+            err("characters_extra 有条目缺 tag")
+            continue
+        if tag in seen:
+            err(f"characters_extra tag 重复: {tag}")
+        if tag in have:
+            err(f"characters_extra 与主库重复: {tag}")
+        seen.add(tag)
+        if not str(c.get("zh") or "").strip():
+            err(f"characters_extra {tag} 缺中文名")
+        if not str(c.get("work") or "").strip():
+            err(f"characters_extra {tag} 缺作品")
+    return len(items)
+
+
 def check_v6_templates():
     """V6 搬来的场景搭配：id 唯一、档位合法、不含男性词、prompt 非空。"""
     path = os.path.join(DATA, "templates_v6.json")
@@ -163,6 +190,7 @@ def main():
     bundle_ids = check_scenes()
     n_tpl = check_templates(bundle_ids)
     n_v6 = check_v6_templates()
+    n_extra = check_extra_characters()
     check_tag_flags()
 
     if errors:
@@ -171,7 +199,7 @@ def main():
             print("  ✗", e)
         return 1
     print(f"校验通过：{EXPECT_CATS} 分类 / {n_tags} 词条 / {len(bundle_ids)} 场景包 / "
-          f"{n_tpl} 自产模板 + {n_v6} 套 V6 场景搭配")
+          f"{n_tpl} 自产模板 + {n_v6} 套 V6 场景搭配 + {n_extra} 补充角色")
     return 0
 
 

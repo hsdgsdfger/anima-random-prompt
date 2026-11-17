@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """把 Comfyui-Anima-Wardrobe-V6 的场景搭配库（scenes）转成本插件的模板卡片。
 
-用户口径（2026-11-17）：只要 **sfw 档位以外** 的。
-  · 默认排除 level=0 的条目（art / weapon 两组整组是 sfw，会一并排掉）
-  · `--keep-sfw` 放开，只按组排（保留 402 条）
-  · 默认再排除含 `1boy` / `2boys` 的条目 —— 本插件的库只有女性，
-    套用异性配方会和下游的「全库禁男」打架；`--keep-male` 放开
+用户口径（2026-11-17 最终）：只要 V6 的 **场景搭配** 和 **姿势库** 两组。
+  · 取 `nsfw`（🔞 NSFW 跨槽位配方）+ `pose`（🧎 姿势场景）
+  · 不要 `art`（艺术构图）、`weapon`（武器场景）、`near`（特写）、`sfw`（全年龄场景）
+  · 不再按档位过滤 —— 档位由节点的 level 参数与设置页矩阵控制，模板页只负责挑内容
+  · 仍排除含 `1boy` / `2boys` 的条目（本插件是全女性库，套异性配方会和下游打架），
+    `--keep-male` 放开
 
 转换规则：
   · prompt = count_lock（默认 `1girl, solo`）+ tags 各值（按原顺序）+ extra
@@ -26,7 +27,7 @@ ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, "data")
 
 LEVEL_BY_NUM = {0: "sfw", 1: "suggestive", 2: "explicit", 3: "hardcore", 4: "extreme"}
-SKIP_GROUPS = {"sfw"}
+KEEP_GROUPS = {"nsfw", "pose"}
 GROUP_ZH = {"nsfw": "跨槽位配方", "near": "特写搭配", "pose": "姿势场景",
             "art": "艺术构图", "weapon": "武器场景"}
 
@@ -70,7 +71,9 @@ def build_prompt(scene):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--v6", default=os.environ.get("ANIMA_V6_DIR", ""))
-    ap.add_argument("--keep-sfw", action="store_true", help="保留 level=0 的条目")
+    ap.add_argument("--keep-sfw", action="store_true", default=True,
+                    help="保留 level=0 的条目（默认就保留，档位交给节点控制）")
+    ap.add_argument("--drop-sfw", action="store_true", help="排掉 level=0 的条目")
     ap.add_argument("--keep-male", action="store_true", help="保留含 1boy / 2boys 的条目")
     args = ap.parse_args()
     if not args.v6 or not os.path.isdir(args.v6):
@@ -87,7 +90,7 @@ def main():
     MALE = re.compile(r"\b(1boy|2boys|3boys|male)\b", re.I)
     for sc in scenes:
         group = str(sc.get("group") or "").strip().lower()
-        if group in SKIP_GROUPS:
+        if group not in KEEP_GROUPS:
             dropped_group += 1
             continue
         prompt = build_prompt(sc)
@@ -99,9 +102,9 @@ def main():
         except (TypeError, ValueError):
             lv_num = 2
         lv_key = LEVEL_BY_NUM.get(lv_num, "explicit")
-        if not args.keep_sfw and lv_num <= 0:
+        if args.drop_sfw and lv_num <= 0:
             dropped_sfw += 1
-            continue
+            continue   # --keep-sfw 已默认开启（档位交给节点控制）
         if not args.keep_male and MALE.search(prompt):
             dropped_male += 1
             continue
@@ -128,7 +131,7 @@ def main():
     for it in items:
         by_group[it["group"]] = by_group.get(it["group"], 0) + 1
     print(f"已写入 {out}：{len(items)} 套")
-    print(f"排除：sfw 组 {dropped_group} · sfw 档位 {dropped_sfw} · 含男性词 {dropped_male}")
+    print(f"排除：非目标组 {dropped_group} · sfw 档位 {dropped_sfw} · 含男性词 {dropped_male}")
     print("按组:", by_group)
     print("\n样例：")
     for it in items[:2] + items[-1:]:

@@ -18,6 +18,8 @@ from . import char_state as S
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(HERE, "data", "characters.json")
+WORK_ZH_PATH = os.path.join(HERE, "data", "work_zh.json")
+EXTRA_PATH = os.path.join(HERE, "data", "characters_extra.json")
 
 # 服装只分「用哪一套」，不再按档位分级 —— 数据里的 level 字段保留但不再参与筛选
 _MODE_KEYS = {"随机": "random", "指定": "fixed", "收藏随机": "fav", "多选加权": "picked"}
@@ -34,6 +36,24 @@ def _load_raw():
         return json.load(f)
 
 
+def _load_extra():
+    try:
+        with open(EXTRA_PATH, "r", encoding="utf-8") as f:
+            items = json.load(f)
+    except Exception:
+        return []
+    out = []
+    for c in items if isinstance(items, list) else []:
+        if not isinstance(c, dict) or not str(c.get("tag") or "").strip():
+            continue
+        c = dict(c)
+        c["tag"] = str(c["tag"]).strip().lower()
+        c.setdefault("appearance", {})
+        c.setdefault("outfits", [])
+        out.append(c)
+    return out
+
+
 def library():
     """内置库 + 自定义角色（同 tag 覆盖），带缓存。"""
     if "lib" not in _CACHE:
@@ -41,6 +61,12 @@ def library():
         chars = list(raw.get("characters") or [])
         works = list(raw.get("works") or [])
         by_tag = {c["tag"]: c for c in chars}
+        # 补充角色（米哈游补齐等）：不改动 characters.json，单独一个文件
+        for c in _load_extra():
+            if c["tag"] in by_tag:
+                continue
+            chars.append(c)
+            by_tag[c["tag"]] = c
         for c in S.load_custom():
             if c["tag"] in by_tag:
                 by_tag[c["tag"]].update(c)
@@ -55,8 +81,23 @@ def invalidate():
     _CACHE.pop("lib", None)
 
 
+def work_zh_map():
+    """作品中文名映射（data/work_zh.json），缺文件时返回空表。"""
+    if "work_zh" not in _CACHE:
+        try:
+            with open(WORK_ZH_PATH, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            _CACHE["work_zh"] = {str(k).strip().lower(): str(v).strip()
+                                 for k, v in raw.items()
+                                 if not str(k).startswith("_") and str(v).strip()}
+        except Exception:
+            _CACHE["work_zh"] = {}
+    return _CACHE["work_zh"]
+
+
 def works_payload():
     lib = library()
+    zh_map = work_zh_map()
     cnt = {}
     for c in lib["characters"]:
         cnt[c.get("work") or ""] = cnt.get(c.get("work") or "", 0) + 1
@@ -64,8 +105,18 @@ def works_payload():
     for w in lib["works"]:
         n = cnt.get(w["id"], 0)
         if n:
+            wid = str(w["id"]).lower()
+            # 优先用映射表，其次用数据自带的中文名
+            zh = zh_map.get(wid) or w.get("zh") or ""
             out.append({"id": w["id"], "name": w.get("name") or w["id"],
-                        "zh": w.get("zh") or "", "count": n})
+                        "zh": zh, "count": n})
+    # 自定义角色带出来、但内置作品表里没有的作品，也要出现在左栏
+    known = {str(w["id"]).lower() for w in out}
+    for wid, n in cnt.items():
+        if wid and wid.lower() not in known:
+            out.append({"id": wid, "name": wid,
+                        "zh": zh_map.get(wid.lower(), ""), "count": n})
+    out.sort(key=lambda w: (-w["count"], w["id"]))
     return out
 
 

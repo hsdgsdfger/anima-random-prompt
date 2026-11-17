@@ -1,6 +1,6 @@
 # Comfyui-Prompt-Forge
 
-> ComfyUI 自定义节点 ｜ 版本 **v0.1.3** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
+> ComfyUI 自定义节点 ｜ 版本 **v0.1.4** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
 
 一个插件，两个节点：
 
@@ -93,9 +93,9 @@ git clone https://github.com/hsdgsdfger/anima-random-prompt.git Comfyui-Prompt-F
 **🗂 模板卡片**：档位筛选、场景分类、滚动加载、标签懒加载并可直接点选、
 换一套（同场景）、按已选反查、套用三态确认（替换/追加/取消）。
 
-模板一共 **1897 套**：自产 1800 套（6 档 × 300）+ 从 Anima Wardrobe V6 搬来的
-**97 套场景搭配**（跨槽位配方 / 特写 / 姿势 / 艺术构图，档位 ≥ 1）。
-V6 那批在场景分类里单独归到「V6 场景搭配」。
+模板一共 **1937 套**：自产 1800 套（6 档 × 300）+ 从 Anima Wardrobe V6 搬来的
+**137 套场景搭配**（跨槽位配方 55 + 姿势场景 82）。档位由节点的 `level` 参数与
+设置页矩阵控制，模板页只管挑内容。V6 那批在场景分类里单独归到「V6 场景搭配」。
 
 **🏞 场景包**：45 个场景包，六类筛选，整套套用。
 
@@ -158,7 +158,9 @@ V6 那批在场景分类里单独归到「V6 场景搭配」。
 | `data/tags.json` | 25 分类 / 2956 条词条（589 KB） |
 | `data/scenes.json` | 45 个场景包 + 互斥标记（72 KB） |
 | `data/templates_ui.json` | 1800 套自产模板（1.16 MB） |
-| `data/templates_v6.json` | 97 套 V6 场景搭配（218 KB，可重建） |
+| `data/templates_v6.json` | 137 套 V6 场景搭配（跨槽位配方 + 姿势，可重建） |
+| `data/characters_extra.json` | 39 个补充角色（米哈游补齐，可重建） |
+| `data/work_zh.json` | 250 条作品名中文映射，覆盖 92% 角色 |
 | `data/tag_flags.json` | 418 条 `tag → 场景标记` 索引（18 KB，可重建） |
 | `data/characters.json` | 2432 个角色 / 287 作品（1.16 MB，可重建） |
 | `thumbs/` | 2432 张角色预览图（29 MB，webp） |
@@ -244,10 +246,14 @@ python tools/routes_smoke.py       # 16 个接口 + 两个节点
 ```bash
 python tools/build_characters.py --v6 "路径/Comfyui-Anima-Wardrobe-V6"
 python tools/build_v6_templates.py --v6 "路径/Comfyui-Anima-Wardrobe-V6"
+python tools/add_mihoyo.py
+python tools/fetch_thumbs.py --only mihoyo
 ```
 
-`build_v6_templates.py` 默认排除 sfw 档位与含男性词的条目；
-想保留全部 402 条加 `--keep-sfw --keep-male`。
+- `build_v6_templates.py` 只取 V6 的 `nsfw`（跨槽位配方）与 `pose`（姿势场景）两组，
+  排除含男性词的条目；想连特写/构图/武器一起要，改 `KEEP_GROUPS`。
+- `add_mihoyo.py` 补米哈游四款游戏缺的女性角色，已有 tag 自动跳过，可反复跑。
+- `fetch_thumbs.py` 按 tag 去 safebooru 抓 SFW 预览图（需要外网，ComfyUI 自带 Pillow）。
 
 ---
 
