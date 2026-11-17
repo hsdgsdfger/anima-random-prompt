@@ -21,7 +21,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
@@ -107,10 +107,14 @@ class PromptForgeRandom:
                                                   "tooltip": "角色输入非空时，发型 / 发色 / 面部 / 瞳色 / 身材不再随机，交给角色输入。关掉则仍会随机抽，可能和角色官方设定打架"}),
                 "outfit_follow": ("BOOLEAN", {"default": False,
                                               "tooltip": "角色输入里带服装时，服装与配饰不再随机（交给角色输入）；角色没带服装则照常随机。泳池/海边/温泉这类场景仍由场景决定服装"}),
-            },
                 # 追加在末尾：合并角色库后，指定用角色的哪一套服装
+                # ⚠️ 必须留在 optional 字典里面。以前这一行被写到了 optional 的
+                #    闭合括号外面，成了 INPUT_TYPES() 的第三个顶层键，值是 tuple；
+                #    新版 ComfyUI 的 /object_info 会遍历顶层做 value.keys()，
+                #    直接 AttributeError，节点在菜单里点不出来（用户 2026-11-17 报）。
                 "char_outfit_id": ("STRING", {"default": "", "multiline": False,
                                               "tooltip": "用角色的哪一套服装（面板点套装自动填）；留空 = 第一套。仅在「服装跟随角色」打开时生效"}),
+            },
             # 不占控件位，ComfyUI 会把这两个塞给 run()：
             # 出图后把实际用的提示词写进 PNG，排查「这张为什么这样」时直接读图
             "hidden": {
