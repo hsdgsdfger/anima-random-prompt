@@ -146,6 +146,28 @@ def check_extra_characters():
     return len(items)
 
 
+def check_dress_logic():
+    """穿衣逻辑：裙裤不同穿、全裸不穿衣、上空不穿上装、下空不穿下装。
+
+    规则实现复用 tools/fix_template_conflicts.py，两边永远一致。
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_fx", os.path.join(HERE, "fix_template_conflicts.py"))
+    fx = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fx)
+    items = load("templates_ui.json")
+    bad = 0
+    for it in items:
+        tags = [t.strip() for t in str(it.get("prompt") or "").split(",") if t.strip()]
+        _, dropped, why = fx.resolve(tags)
+        if dropped:
+            bad += 1
+            if bad <= 5:
+                err(f"{it.get('id')} 穿衣冲突（{why}）：{', '.join(dropped)}")
+    return bad
+
+
 def check_v6_templates():
     """V6 搬来的场景搭配：id 唯一、档位合法、不含男性词、prompt 非空。"""
     path = os.path.join(DATA, "templates_v6.json")
@@ -191,6 +213,7 @@ def main():
     n_tpl = check_templates(bundle_ids)
     n_v6 = check_v6_templates()
     n_extra = check_extra_characters()
+    n_conf = check_dress_logic()
     check_tag_flags()
 
     if errors:
@@ -199,7 +222,8 @@ def main():
             print("  ✗", e)
         return 1
     print(f"校验通过：{EXPECT_CATS} 分类 / {n_tags} 词条 / {len(bundle_ids)} 场景包 / "
-          f"{n_tpl} 自产模板 + {n_v6} 套 V6 场景搭配 + {n_extra} 补充角色")
+          f"{n_tpl} 自产模板 + {n_v6} 套 V6 场景搭配 + {n_extra} 补充角色"
+          f"（穿衣冲突 {n_conf} 套）")
     return 0
 
 
