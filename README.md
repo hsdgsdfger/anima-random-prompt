@@ -1,6 +1,6 @@
 # Comfyui-Prompt-Forge
 
-> ComfyUI 自定义节点 ｜ 版本 **v0.1.5** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
+> ComfyUI 自定义节点 ｜ 版本 **v0.1.6** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
 
 一个插件，两个节点：
 
@@ -253,7 +253,8 @@ python tools/fetch_thumbs.py --only mihoyo
 - `build_v6_templates.py` 只取 V6 的 `nsfw`（跨槽位配方）与 `pose`（姿势场景）两组，
   排除含男性词的条目；想连特写/构图/武器一起要，改 `KEEP_GROUPS`。
 - `add_mihoyo.py` 补米哈游四款游戏缺的女性角色，已有 tag 自动跳过，可反复跑。
-- `fetch_thumbs.py` 按 tag 去 safebooru 抓 SFW 预览图（需要外网，ComfyUI 自带 Pillow）。
+- `fetch_thumbs.py` 按 tag 去 safebooru 抓预览图（缩略图，jpg，不依赖 Pillow）。
+  米哈游那批已抓到 30/39，剩下 9 个源站没收录，面板显示占位。
 - `fix_template_conflicts.py` 修穿衣逻辑：全裸不穿衣、上空不穿上装、裙裤不同穿。
   `validate_data.py` 会调同一套规则，重跑生成器后立刻能查出复发。
 

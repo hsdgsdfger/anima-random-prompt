@@ -14,13 +14,14 @@
 抓完重启 ComfyUI，面板就会显示图；没抓到的继续显示「无预览」。
 """
 import argparse
-import io
 import json
 import os
 import sys
 import time
+import re
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -28,15 +29,15 @@ DATA = os.path.join(ROOT, "data")
 THUMBS = os.path.join(ROOT, "thumbs")
 CUSTOM = os.path.join(ROOT, "custom_thumbs")
 
-API = "https://safebooru.donmai.us/posts.json"
+# safebooru.org 的 dapi：实测可直连；safebooru.donmai.us 会被 Cloudflare 403
+API = "https://safebooru.org/index.php?page=dapi&s=post&q=index"
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
-try:
-    from PIL import Image
-except ImportError:
-    print("需要 Pillow。用 ComfyUI 自带环境跑就行，例如：", file=sys.stderr)
-    print('  "E:/Game/ComfyUI-Installs/Anima模型/standalone-env/python.exe" tools/fetch_thumbs.py', file=sys.stderr)
-    print("或者 pip install pillow", file=sys.stderr)
-    sys.exit(1)
+# 这里**故意不依赖 Pillow**：抓图用系统 Python 跑（能连外网），
+# 但 ComfyUI 自带的 Python 连 TLS 握手都会超时，装不了也跑不通。
+# 所以直接下载 safebooru 的 preview 缩略图（约 150px）存成 .jpg，
+# 后端路由先找 .webp 再找 .jpg，两种格式都能出图。
 
 
 def load_json(path, default):
@@ -55,8 +56,8 @@ def all_characters():
 
 
 def tag_to_query(tag):
-    """`mavuika_(genshin_impact)` -> `mavuika_(genshin_impact) rating:general`"""
-    return f"{tag} rating:general"
+    """safebooru.org 本身就是 SFW 站，不需要 rating 参数。"""
+    return str(tag).strip()
 
 
 def build_opener(proxy):
@@ -66,32 +67,49 @@ def build_opener(proxy):
     return urllib.request.build_opener(*handlers)
 
 
+def _get(opener, url, timeout=12, retry=3, referer=None):
+    """带重试的 GET。这个站的 TLS 握手会间歇性超时，单发一次成功率只有一半。"""
+    h = {"User-Agent": UA}
+    if referer:
+        h["Referer"] = referer
+    last = None
+    for i in range(retry):
+        try:
+            return opener.open(urllib.request.Request(url, headers=h), timeout=timeout).read()
+        except Exception as exc:
+            last = exc
+            time.sleep(1.0 * (i + 1))
+    raise last
+
+
 def fetch_post(opener, tag):
-    q = urllib.parse.urlencode({"tags": tag_to_query(tag), "limit": 1,
-                                "only": "file_url"})
-    req = urllib.request.Request(f"{API}?{q}",
-                                 headers={"User-Agent": "anima-character-picker/1.0"})
-    with opener.open(req, timeout=25) as r:
-        posts = json.loads(r.read().decode("utf-8"))
-    if not posts:
-        return None
-    p = posts[0]
-    return p.get("file_url") or p.get("large_file_url") or p.get("preview_file_url")
+    """返回 (图片 url, 原图宽高)；没有结果返回 (None, None)。"""
+    q = urllib.parse.urlencode({"tags": tag_to_query(tag), "limit": 3})
+    xml = _get(opener, f"{API}&{q}").decode("utf-8", "ignore")
+    posts = re.findall(r"<post\s+([^>]+?)/?>", xml)
+    for raw in posts:
+        a = dict(re.findall(r'(\w+)="([^"]*)"', raw))
+        # 优先 preview（小、快）；sample 太大，150px 卡片够用
+        url = a.get("preview_url") or a.get("sample_url") or a.get("file_url")
+        if url:
+            try:
+                w, h = int(a.get("width") or 0), int(a.get("height") or 0)
+            except ValueError:
+                w = h = 0
+            return url, (w, h)
+    return None, None
 
 
 def download(opener, url):
-    req = urllib.request.Request(url, headers={"User-Agent": "anima-character-picker/1.0"})
-    with opener.open(req, timeout=40) as r:
-        return r.read()
+    return _get(opener, url, timeout=20, referer="https://safebooru.org/")
 
 
-def to_webp(raw, out_path, size=320):
-    img = Image.open(io.BytesIO(raw))
-    if img.mode not in ("RGB", "RGBA"):
-        img = img.convert("RGB")
-    img.thumbnail((size, size), Image.LANCZOS)
+def save_jpg(raw, out_path):
+    if raw[:3] != b"\xff\xd8\xff":
+        raise RuntimeError("返回的不是 JPEG")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    img.save(out_path, "WEBP", quality=86, method=4)
+    with open(out_path, "wb") as f:
+        f.write(raw)
 
 
 def main():
@@ -101,7 +119,8 @@ def main():
     ap.add_argument("--proxy", default=os.environ.get("THUMB_PROXY", ""),
                     help="HTTP 代理，如 http://127.0.0.1:7890")
     ap.add_argument("--limit", type=int, default=0, help="最多抓几个（试跑用）")
-    ap.add_argument("--sleep", type=float, default=1.2, help="每次请求间隔秒数，别把人家站打崩")
+    ap.add_argument("--sleep", type=float, default=0.5, help="每个线程内的请求间隔秒数")
+    ap.add_argument("--workers", type=int, default=4, help="并发线程数，默认 4")
     args = ap.parse_args()
 
     os.makedirs(THUMBS, exist_ok=True)
@@ -113,7 +132,7 @@ def main():
     for c in chars:
         tag = c["tag"]
         safe = "".join(ch for ch in tag.lower() if ch.isalnum() or ch in "_-")
-        target = os.path.join(THUMBS, safe + ".webp")
+        target = os.path.join(THUMBS, safe + ".jpg")
         if not args.all and os.path.exists(target) and os.path.getsize(target) > 0:
             continue
         todo.append((tag, target))
@@ -127,24 +146,44 @@ def main():
     print(f"待抓 {total} 个" + (f"，代理 {args.proxy}" if args.proxy else "，直连"))
 
     opener = build_opener(args.proxy)
-    okc = fail = 0
     t0 = time.time()
-    for i, (tag, target) in enumerate(todo, 1):
+    okc = 0
+    failed = []
+    lock_state = {"done": 0}
+
+    def one(item):
+        tag, target = item
         try:
-            url = fetch_post(opener, tag)
+            url, _size = fetch_post(opener, tag)
             if not url:
-                raise RuntimeError("safebooru 没有这张 tag 的 SFW 图")
+                raise RuntimeError("safebooru 没有这张 tag 的图")
             raw = download(opener, url)
-            to_webp(raw, target)
-            okc += 1
-            print(f"[{i}/{total}] ✓ {tag}")
+            save_jpg(raw, target)
+            return tag, None
         except Exception as exc:
-            fail += 1
-            print(f"[{i}/{total}] ✗ {tag} —— {exc}")
-        if i < total:
+            return tag, str(exc)[:80]
+        finally:
             time.sleep(args.sleep)
 
-    print(f"\n完成：成功 {okc} / 失败 {fail}，用时 {time.time() - t0:.0f}s")
+    workers = max(1, min(8, args.workers))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = [pool.submit(one, it) for it in todo]
+        for f in as_completed(futs):
+            tag, err = f.result()
+            lock_state["done"] += 1
+            i = lock_state["done"]
+            if err is None:
+                okc += 1
+                print(f"[{i}/{total}] ✓ {tag}", flush=True)
+            else:
+                failed.append((tag, err))
+                print(f"[{i}/{total}] ✗ {tag} —— {err}", flush=True)
+
+    print(f"\n完成：成功 {okc} / 失败 {len(failed)}，用时 {time.time() - t0:.0f}s")
+    if failed:
+        print("失败清单（可再跑一次补）：")
+        for tag, err in failed:
+            print(f"  {tag}  —— {err}")
     print("重启 ComfyUI 后生效")
     return 0
 

@@ -20,7 +20,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
@@ -488,9 +488,12 @@ try:
         if custom and os.path.exists(custom):
             return web.FileResponse(custom)
         safe = "".join(ch for ch in str(tag).lower() if ch.isalnum() or ch in "_-")
-        path = os.path.join(CHAR_THUMB_DIR, safe + ".webp")
-        if safe and os.path.exists(path):
-            return web.FileResponse(path)
+        if not safe:
+            return web.json_response({"error": "没有预览图"}, status=404)
+        for ext in (".webp", ".jpg", ".png"):
+            path = os.path.join(CHAR_THUMB_DIR, safe + ext)
+            if os.path.exists(path):
+                return web.FileResponse(path)
         return web.json_response({"error": "没有预览图"}, status=404)
 
     @PromptServer.instance.routes.post("/anima_char/thumb/{tag}")
