@@ -1,6 +1,6 @@
 # Comfyui-Prompt-Forge
 
-> ComfyUI 自定义节点 ｜ 版本 **v0.1.10** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
+> ComfyUI 自定义节点 ｜ 版本 **v0.1.11** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
 
 一个插件，两个节点：
 

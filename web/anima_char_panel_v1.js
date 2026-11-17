@@ -211,6 +211,11 @@ function closePanel() {
   st.editing = null;
 }
 
+/* 集合类页签：按「我自己挑的」定义的，不受作品筛选裁剪。
+   以前收藏/勾选池会被上次记住的作品筛选再切一刀，6 个勾选只显示 3 个
+   （用户 2026-11-17 报「勾选池只出来三个」），看起来就像数据丢了。 */
+const COLLECTION_TABS = ["fav", "picked", "recent", "excluded"];
+
 function currentList() {
   const q = st.q.trim().toLowerCase();
   let items = st.lib?.characters || [];
@@ -221,7 +226,9 @@ function currentList() {
     const order = st.state.recent;
     items = order.map((t) => byTag().get(t)).filter(Boolean);
   }
-  if (st.work !== "all") items = items.filter((c) => c.work === st.work);
+  if (st.work !== "all" && !COLLECTION_TABS.includes(st.tab)) {
+    items = items.filter((c) => c.work === st.work);
+  }
   if (q) {
     items = items.filter((c) =>
       c.tag.includes(q) || (c.name || "").toLowerCase().includes(q) ||
@@ -328,7 +335,18 @@ function renderCardsFootOnly(total) {
 function resetList() {
   st.shown = BATCH;
   if (panel?.cards) panel.cards.scrollTop = 0;
+  refreshWorkHl();
   renderCards();
+}
+
+/* 只切作品行的选中态，不重建整个列表（288 行，切页签时重建太浪费） */
+function refreshWorkHl() {
+  if (!panel?.workList) return;
+  const isColl = COLLECTION_TABS.includes(st.tab);
+  panel.workList.querySelectorAll(".workrow").forEach((row) => {
+    const on = isColl ? row.dataset.wid === "all" : row.dataset.wid === st.work;
+    row.classList.toggle("on", on);
+  });
 }
 
 function renderTabs() {
@@ -356,11 +374,20 @@ function renderWorks() {
   const list = (st.works || []).filter((w) =>
     !q || w.id.includes(q) || (w.name || "").toLowerCase().includes(q) || (w.zh || "").includes(q));
   box.innerHTML = "";
+  // 集合类页签不按作品筛，左侧就高亮「全部作品」，避免以为筛选还生效
+  const isColl = COLLECTION_TABS.includes(st.tab);
   const mk = (id, label, count) => {
-    const row = el("div", "workrow" + (st.work === id ? " on" : ""));
+    const row = el("div", "workrow" + ((isColl ? id === "all" : st.work === id) ? " on" : ""));
+    row.dataset.wid = id;
     row.appendChild(el("span", "wn", label));
     row.appendChild(el("span", "wc", String(count)));
-    row.onclick = () => { st.work = id; st.shown = BATCH; saveUi(); renderWorks(); renderCards(); };
+    // 集合页签下点作品：自动回到「全部」再按该作品筛，否则点了没反应
+    row.onclick = () => {
+      st.work = id;
+      st.shown = BATCH;
+      if (id !== "all" && COLLECTION_TABS.includes(st.tab)) st.tab = "all";
+      saveUi(); renderTabs(); renderWorks(); renderCards();
+    };
     box.appendChild(row);
   };
   const total = (st.lib?.characters || []).length;
