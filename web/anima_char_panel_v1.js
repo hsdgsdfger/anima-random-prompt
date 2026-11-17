@@ -243,6 +243,25 @@ function cardOf(c) {
   const wk = el("div", "cwork", c.work || "—");
   card.appendChild(wk);
 
+  // 勾选池页签里每张卡带权重输入（多选加权模式用）
+  if (st.tab === "picked") {
+    const wrow = el("div", "wrow");
+    wrow.appendChild(el("span", "wl", "权重"));
+    const wi = el("input", "winput");
+    wi.type = "number";
+    wi.min = "0.1"; wi.max = "20"; wi.step = "0.1";
+    wi.value = String(st.state.weights[c.tag] ?? 1);
+    wi.onclick = (e) => e.stopPropagation();
+    wi.onchange = () => {
+      const v = Math.max(0.1, Math.min(20, Number(wi.value) || 1));
+      st.state.weights[c.tag] = Math.round(v * 10) / 10;
+      wi.value = String(st.state.weights[c.tag]);
+      saveState();
+    };
+    wrow.appendChild(wi);
+    card.appendChild(wrow);
+  }
+
   const ops = el("div", "cops");
   const bFav = el("span", "op" + (fav ? " on" : ""), fav ? "★" : "☆");
   bFav.title = "收藏";
@@ -346,9 +365,9 @@ function renderInfo() {
   box.innerHTML = "";
   const cur = st.cur;
   if (!cur) {
+    const n = (st.state && st.state.picked) ? st.state.picked.length : 0;
     box.appendChild(el("span", "hint-inline",
-      st.state && st.state.picked && st.state.picked.length
-        ? `勾选池 ${st.state.picked.length} 个（权重在右侧列表里调不了，改用卡片 ＋／✓ 增减）`
+      n ? `勾选池 ${n} 个 · 切到「勾选池」页签可逐个调权重，节点模式选「多选加权」`
         : "点卡片选人；选完节点自动切「指定」模式"));
     return;
   }
@@ -852,6 +871,10 @@ const CSS = `
 .ac-win .ifo-btn.main{background:linear-gradient(180deg,#3f8f6f,#35795d);border-color:#4aa17c;color:#fff;font-weight:600}
 .ac-win .hint-inline{color:#666c77;font-size:11.5px}
 .ac-win .ac-count{color:#666c77;font-size:11px;flex:0 0 auto}
+.ac-win .wrow{display:flex;align-items:center;gap:5px;padding:0 8px 7px}
+.ac-win .wrow .wl{color:#666c77;font-size:10.5px;flex:0 0 auto}
+.ac-win .wrow .winput{width:52px;padding:2px 5px;border-radius:5px;background:#23252b;
+  border:1px solid #383b43;color:#e6b45c;font-size:11px;text-align:center}
 .ac-mask2{position:fixed;inset:0;background:rgba(8,9,12,.7);z-index:100005;display:flex;align-items:center;justify-content:center}
 .ac-edit{width:min(700px,94vw);max-height:90vh;background:#1b1c21;border:1px solid #34373f;border-radius:12px;
   display:flex;flex-direction:column;overflow:hidden;color:#e3e6ec;
