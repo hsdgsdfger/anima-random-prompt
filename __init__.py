@@ -20,7 +20,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
@@ -86,8 +86,13 @@ class PromptForgeRandom:
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("positive", "negative", "level", "report")
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("positive", "negative")
+    # 鼠标悬浮在输出口上显示的中文说明
+    OUTPUT_TOOLTIPS = (
+        "正向提示词：按档位随机拼好的整段（主体 / 外观 / 服装 / 姿势 / 场景 / 光影）\n接 CLIP Text Encode 的正向输入",
+        "负向提示词：固定的质量类负面 + 该档位下不该出现的词\n接 CLIP Text Encode 的负向输入；关掉 negative_on 时为空串",
+    )
     FUNCTION = "run"
     CATEGORY = SECTION_NAME
 
@@ -145,11 +150,19 @@ class PromptForgeRandom:
             appearance_follow=bool(appearance_follow),
             outfit_follow=bool(outfit_follow),
         )
-        return (res["positive"], res["negative"], res["level"], res["report"])
+        # 多段输出收成一正一负：档位与抽样依据不再占口，改打到控制台日志
+        try:
+            print(f"[PromptForge] {res['level']} | {res['report']}".replace("\n", " | "))
+        except Exception:
+            pass
+        return (res["positive"], res["negative"])
 
 
+# 角色节点不产生负面词，这里给一段通用质量负面，只为与图生节点的两口对齐
+CHAR_BASE_NEGATIVE = ("lowres, bad anatomy, worst quality, low quality, blurry, "
+                      "extra fingers, bad hands, jpeg artifacts, watermark, signature, "
+                      "text, logo, ugly")
 CHAR_MODE_LABELS = ["随机", "指定", "收藏随机", "多选加权"]
-CHAR_OUTFIT_LEVELS = ["全年龄", "擦边", "成人"]
 CHAR_THUMB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "thumbs")
 
 
@@ -174,10 +187,8 @@ class AnimaCharacterPicker:
                                                "tooltip": "输出角色的服装预设。开了它，下游节点就别再出服装了"}),
             },
             "optional": {
-                "outfit_level": (CHAR_OUTFIT_LEVELS, {"default": "全年龄",
-                                                      "tooltip": "服装档位上限：擦边 / 成人会放开角色库里更高档的套装"}),
                 "outfit_id": ("STRING", {"default": "", "multiline": False,
-                                         "tooltip": "指定套装 id（面板选套装时自动填）；留空 = 取该档位第一套"}),
+                                         "tooltip": "用哪一套服装（面板点套装自动填）；启用一套后该角色其余套装自动失效。留空 = 用第一套"}),
                 "extra_prompt": ("STRING", {"default": "", "multiline": True,
                                             "tooltip": "手写补充，拼在 positive 末尾"}),
                 "random_each_run": ("BOOLEAN", {"default": True,
@@ -185,38 +196,42 @@ class AnimaCharacterPicker:
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("character", "appearance", "outfit", "positive", "report")
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("positive", "negative")
+    # 鼠标悬浮在输出口上显示的中文说明
+    OUTPUT_TOOLTIPS = (
+        "正向提示词：角色身份 + 官方外观 + 服装（按开关拼成一段）\n直接接 Prompt Forge 的 role_prompt，或接 CLIP 正向输入",
+        "负向提示词：一段通用质量负面（角色本身不产生负面词）\n只为与图生节点的两个口对齐，可以不用",
+    )
     FUNCTION = "run"
     CATEGORY = CHAR_SECTION
 
     @classmethod
     def IS_CHANGED(cls, mode="随机", seed=-1, role_name="", work_filter="",
                    include_appearance=True, include_outfit=False,
-                   outfit_level="全年龄", outfit_id="", extra_prompt="",
-                   random_each_run=True):
+                   outfit_id="", extra_prompt="", random_each_run=True):
         if int(seed) < 0 or bool(random_each_run):
             return f"rand:{time.time_ns()}"
         raw = "|".join(str(x) for x in (mode, seed, role_name, work_filter,
                                         include_appearance, include_outfit,
-                                        outfit_level, outfit_id, extra_prompt))
+                                        outfit_id, extra_prompt))
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
     def run(self, mode="随机", seed=-1, role_name="", work_filter="",
             include_appearance=True, include_outfit=False,
-            outfit_level="全年龄", outfit_id="", extra_prompt="",
-            random_each_run=True):
+            outfit_id="", extra_prompt="", random_each_run=True):
         use_seed = -1 if bool(random_each_run) else int(seed)
         st = _char_state.load_state()
         rec, why = _char_picker.select(mode=mode, seed=use_seed, role_name=role_name,
                                        work_filter=work_filter, st=st)
         if not rec:
-            return ("", "", "", str(extra_prompt or "").strip(),
-                    "\n".join([f"模式: {mode}", f"没挑到角色: {why}"]))
+            msg = f"没挑到角色: {why}"
+            print(f"[CharacterPicker] {msg}")
+            return (str(extra_prompt or "").strip(), CHAR_BASE_NEGATIVE)
 
         seg = _char_picker.compose(rec, include_appearance=bool(include_appearance),
                                    include_outfit=bool(include_outfit),
-                                   outfit_level=outfit_level, outfit_id=outfit_id)
+                                   outfit_id=outfit_id)
 
         positive = seg["positive"]
         if str(extra_prompt or "").strip():
@@ -229,18 +244,14 @@ class AnimaCharacterPicker:
         except Exception:
             pass
 
-        lines = [
-            f"模式: {why}",
-            f"角色: {rec.get('zh') or rec.get('name')}（{rec['tag']}）",
-            f"作品: {rec.get('work') or '未知'}",
-            f"身份: {seg['character']}",
-            f"外观: {seg['counts']['appearance']} 条" + ("" if include_appearance else "（已关闭）"),
-            "服装: " + (f"{seg['counts']['outfit']} 条 · {seg['outfit_name']}"
-                        if include_outfit else "已关闭"),
-            f"种子: {use_seed}",
-        ]
-        return (seg["character"], seg["appearance"], seg["outfit"],
-                positive, "\n".join(lines))
+        try:
+            print(f"[CharacterPicker] {why} | {rec.get('zh') or rec.get('name')}"
+                  f"（{rec['tag']}）| 外观 {seg['counts']['appearance']} 条"
+                  f" | 服装 " + (f"{seg['counts']['outfit']} 条 {seg['outfit_name']}"
+                                if include_outfit else "关") + f" | seed {use_seed}")
+        except Exception:
+            pass
+        return (positive, CHAR_BASE_NEGATIVE)
 
 
 NODE_CLASS_MAPPINGS = {"PromptForgeRandom": PromptForgeRandom,

@@ -97,7 +97,9 @@ def call(method, path, req=None):
 print("\n[节点注册]")
 ok("两个节点都在", set(m.NODE_CLASS_MAPPINGS) == {"PromptForgeRandom", "AnimaCharacterPicker"},
    str(list(m.NODE_CLASS_MAPPINGS)))
-ok(f"版本 {m.__version__}", m.__version__ == "0.1.1", m.__version__)
+_ver_file = open(os.path.join(ROOT, "VERSION"), encoding="utf-8").read().strip()
+ok(f"版本与 VERSION 一致（{m.__version__}）", m.__version__ == _ver_file,
+   f"{m.__version__} vs {_ver_file}")
 ok("显示名齐全", len(m.NODE_DISPLAY_NAME_MAPPINGS) == 2)
 
 print("\n[路由注册]")
@@ -167,6 +169,7 @@ out = pf_node.run("sfw · 全年龄", 5, 0, 0.65, "", "不指定", "", "",
                   True, "场景成套 · 现实逻辑", "", False, "直通",
                   "hatsune miku, aqua hair, twintails", True, False)
 ok("提示词节点出词", bool(out[0]), out[0][:60])
+ok("负向非空", bool(out[1]), out[1][:40])
 body_only = out[0].replace("aqua hair", "").replace("twintails", "")
 ok("外观让位生效（没混进随机发型发色）",
    not any(x in body_only for x in ("black hair", "blonde hair", "long hair", "bob cut")),
@@ -175,15 +178,14 @@ ok("外观让位生效（没混进随机发型发色）",
 cc_node = m.AnimaCharacterPicker()
 out = cc_node.run(mode="指定", seed=1, role_name="初音未来", work_filter="",
                   include_appearance=True, include_outfit=True,
-                  outfit_level="全年龄", outfit_id="", extra_prompt="",
-                  random_each_run=False)
+                  outfit_id="", extra_prompt="", random_each_run=False)
 ok("角色节点出人", out[0].startswith("hatsune miku"), out[0])
-ok("服装段非空", bool(out[2]), out[2])
+ok("角色节点一正一负", len(out) == 2, str(len(out)))
+ok("服装已拼进正向", "necktie" in out[0], out[0][-80:])
 
 out = m.AnimaCharacterPicker().run(mode="随机", seed=7, role_name="", work_filter="touhou",
                                    include_appearance=True, include_outfit=False,
-                                   outfit_level="全年龄", outfit_id="", extra_prompt="",
-                                   random_each_run=False)
+                                   outfit_id="", extra_prompt="", random_each_run=False)
 ok("按作品限定生效", "touhou" in out[0], out[0])
 
 print()

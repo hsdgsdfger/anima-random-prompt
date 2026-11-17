@@ -19,8 +19,7 @@ from . import char_state as S
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(HERE, "data", "characters.json")
 
-OUTFIT_LEVELS = ["全年龄", "擦边", "成人"]
-_LEVEL_NUM = {"全年龄": 0, "擦边": 1, "成人": 2}
+# 服装只分「用哪一套」，不再按档位分级 —— 数据里的 level 字段保留但不再参与筛选
 _MODE_KEYS = {"随机": "random", "指定": "fixed", "收藏随机": "fav", "多选加权": "picked"}
 
 # pop 的压缩指数：原值差 3 个数量级，直接加权热门会垄断，
@@ -189,26 +188,24 @@ def appearance_tags(rec):
     return _uniq(out)
 
 
-def outfit_tags(rec, level_key="全年龄", outfit_id=""):
-    """服装段：按档位上限挑一套；同一角色有多套时优先选中的那套。"""
-    cap = _LEVEL_NUM.get(level_key, 0)
-    outs = [o for o in (rec.get("outfits") or []) if int(o.get("level") or 0) <= cap]
+def outfit_tags(rec, outfit_id=""):
+    """服装段：选中哪套就用哪套，其余套装不参与（启用一套 = 别的自动失效）。"""
+    outs = list(rec.get("outfits") or [])
     if not outs:
         return [], ""
     if outfit_id:
         for o in outs:
-            if o.get("id") == outfit_id:
+            if str(o.get("id")) == str(outfit_id):
                 return _uniq(o.get("tags") or []), o.get("zh") or o.get("id") or ""
     o = outs[0]
     return _uniq(o.get("tags") or []), o.get("zh") or o.get("id") or ""
 
 
-def compose(rec, include_appearance=True, include_outfit=False,
-            outfit_level="全年龄", outfit_id=""):
+def compose(rec, include_appearance=True, include_outfit=False, outfit_id=""):
     """把三段拼成返回结构。"""
     character = _uniq([rec.get("trigger") or rec.get("tag")])
     appear = appearance_tags(rec) if include_appearance else []
-    outfit, outfit_name = outfit_tags(rec, outfit_level, outfit_id) if include_outfit else ([], "")
+    outfit, outfit_name = outfit_tags(rec, outfit_id) if include_outfit else ([], "")
 
     parts = list(character)
     for t in appear:

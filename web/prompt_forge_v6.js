@@ -27,13 +27,26 @@ const LABELS = {
 
 // 输入槽中文名（forceInput 不出 widget，靠 socket label 显示）
 const INPUT_LABELS = { role_prompt: "角色提示词" };
+const INPUT_TIPS = {
+  role_prompt: "角色提示词：从「Anima 角色选择」的 positive 接过来\n非空时外观 / 服装是否让位，由下面两个开关决定",
+};
+// 输出口中文说明（后端 OUTPUT_TOOLTIPS 已给一份，这里兜底老版本前端）
+const OUTPUT_TIPS = {
+  positive: "正向提示词：整段拼好的内容，接 CLIP 正向输入",
+  negative: "负向提示词：质量类负面 + 该档位不该出现的词，接 CLIP 负向输入",
+};
 
 function localize(node) {
   (node.widgets || []).forEach((w) => {
     if (w && LABELS[w.name]) w.label = LABELS[w.name];
   });
   (node.inputs || []).forEach((i) => {
-    if (i && INPUT_LABELS[i.name]) i.label = INPUT_LABELS[i.name];
+    if (!i) return;
+    if (INPUT_LABELS[i.name]) i.label = INPUT_LABELS[i.name];
+    if (INPUT_TIPS[i.name]) i.tooltip = INPUT_TIPS[i.name];
+  });
+  (node.outputs || []).forEach((o) => {
+    if (o && OUTPUT_TIPS[o.name]) o.tooltip = OUTPUT_TIPS[o.name];
   });
   node.setDirtyCanvas?.(true, true);
 }

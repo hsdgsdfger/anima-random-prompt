@@ -1,6 +1,6 @@
 # Comfyui-Prompt-Forge
 
-> ComfyUI 自定义节点 ｜ 版本 **v0.1.1** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
+> ComfyUI 自定义节点 ｜ 版本 **v0.1.2** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
 
 一个插件，两个节点：
 
@@ -75,9 +75,15 @@ git clone https://github.com/hsdgsdfger/anima-random-prompt.git Comfyui-Prompt-F
 
 > `role_prompt` 是 `forceInput`，不出 widget；其余 19 个是控件，新参数一律追加在末尾。
 
-### 输出
+### 输出（一正一负）
 
-`positive` / `negative` / `level` / `report`
+| 输出 | 内容 |
+| --- | --- |
+| `positive` | 整段拼好的正向提示词 |
+| `negative` | 负向提示词（关掉 `negative_on` 时为空串） |
+
+> 档位与抽样依据不再占输出口，改打到 ComfyUI 控制台日志（`[PromptForge] …`）。
+> 鼠标悬浮输出口可看到中文说明。
 
 ### 工作台
 
@@ -105,27 +111,26 @@ git clone https://github.com/hsdgsdfger/anima-random-prompt.git Comfyui-Prompt-F
 | `work_filter` | STRING | 空 | 随机模式按作品限定，`|` 分隔 |
 | `include_appearance` | BOOLEAN | `true` | 输出官方外观 |
 | `include_outfit` | BOOLEAN | `false` | 输出服装预设 |
-| `outfit_level` | 下拉 | `全年龄` | 服装档位上限 |
-| `outfit_id` | STRING | 空 | 指定套装 id |
+| `outfit_id` | STRING | 空 | 用哪一套服装；面板点套装自动填。启用一套后其余套装自动失效 |
 | `extra_prompt` | STRING | 空 | 手写补充 |
 | `random_each_run` | BOOLEAN | `true` | 每次运行重抽 |
 
-### 输出
+### 输出（一正一负）
 
 | 输出 | 内容 |
 | --- | --- |
-| `character` | `hatsune miku, vocaloid` |
-| `appearance` | `aqua hair, very long hair, twintails, aqua eyes` |
-| `outfit` | `necktie, sleeveless shirt, black skirt` |
-| `positive` | 按开关拼好的一段 → 接 `role_prompt` |
-| `report` | 抽到谁、为什么 |
+| `positive` | 角色身份 + 官方外观 + 服装，按开关拼成一段 → 接 `role_prompt` |
+| `negative` | 一段通用质量负面（角色本身不产生负面词），可以不用 |
+
+> 抽到谁、外观几条、服装几套，改打到控制台日志（`[CharacterPicker] …`）。
 
 ### 角色库面板
 
 点节点上 **「🎭 打开角色库」**。2432 个角色 / 287 个作品 / 2432 张预览图。
 
-- 五个页签：全部 / 收藏 / 勾选池 / 最近 / 排除
+- **左侧栏**：五个分类（全部 / 收藏 / 勾选池 / 最近 / 排除）+ 287 个作品的筛选列表
 - 缩略图墙 60 张一批滚动加载，搜中英文作品均可用
+- **底部条**：当前角色的缩略图、身份、外观摘要、服装下拉、复制与应用按钮
 - 卡片四键：`☆` 收藏、`＋` 进勾选池、`⊘` 拉黑（随机永不出现）、`✎` 编辑
 - 点卡片本体 = 选人，节点自动切「指定」并写入 `role_name`
 - 勾选池每个角色带权重（0.1–20），配「多选加权」模式

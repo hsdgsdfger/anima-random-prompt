@@ -243,11 +243,30 @@ function loadUserdata() {
   return ds.ud;
 }
 let saveTimer = 0;
-function scheduleSave(delay = 350) {
+let pendingBody = null;
+function scheduleSave(delay = 250) {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flushSave, delay);
 }
+// 关 ComfyUI / 关标签页时把还没发出去的那一次立刻送出
+function flushOnExit() {
+  if (!pendingBody) return;
+  const body = pendingBody;
+  pendingBody = null;
+  try {
+    navigator.sendBeacon("/prompt_forge/userdata",
+      new Blob([body], { type: "application/json" }));
+  } catch {}
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushOnExit);
+  window.addEventListener("beforeunload", flushOnExit);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushOnExit();
+  });
+}
 function flushSave() {
+  clearTimeout(saveTimer);
   lsSet(FAV_TAG_KEY, st.favTags);
   lsSet(FAV_TPL_KEY, st.favTpl);
   lsSet(RECENT_KEY, st.recent);
@@ -261,13 +280,15 @@ function flushSave() {
     favorites: { tags: st.favTags, templates: st.favTpl, recent: st.recent, zh: st.zh },
     settings: st.cfg || defaultCfg(),
   });
+  pendingBody = body;
   pfFetch("/prompt_forge/userdata", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,
   }).then((r) => {
     if (!r.ok) return r.json().then((j) => { throw new Error(j.error || r.status); });
-  }).catch((e) => toast(`保存失败：${e.message || e}`, false));
+  }).catch((e) => toast(`保存失败：${e.message || e}`, false))
+    .finally(() => { if (pendingBody === body) pendingBody = null; });
 }
 
 /* ---------- 写回节点 ---------- */

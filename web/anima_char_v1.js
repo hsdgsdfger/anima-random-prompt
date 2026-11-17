@@ -17,9 +17,18 @@ const LABELS = {
   random_each_run: "每次运行重抽",
 };
 
+// 输出口中文说明（后端 OUTPUT_TOOLTIPS 已给一份，这里兜底老版本前端）
+const OUTPUT_TIPS = {
+  positive: "正向提示词：角色身份 + 官方外观 + 服装\n接 Prompt Forge 的 role_prompt，或直接接 CLIP 正向输入",
+  negative: "负向提示词：通用质量负面，可以不用\n只为与图生节点的两个口对齐",
+};
+
 function localize(node) {
   (node.widgets || []).forEach((w) => {
     if (w && LABELS[w.name]) w.label = LABELS[w.name];
+  });
+  (node.outputs || []).forEach((o) => {
+    if (o && OUTPUT_TIPS[o.name]) o.tooltip = OUTPUT_TIPS[o.name];
   });
   node.setDirtyCanvas?.(true, true);
 }

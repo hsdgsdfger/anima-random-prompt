@@ -12,7 +12,7 @@ const AP_KEYS = [
 ];
 
 const st = {
-  node: null, tab: "all", q: "", work: "all", shown: BATCH,
+  node: null, tab: "all", q: "", wq: "", work: "all", shown: BATCH,
   lib: null, works: [], state: null, cur: null, editing: null,
 };
 const stt = { lib: "idle", state: "idle" };
@@ -83,15 +83,49 @@ function loadState() {
   });
 }
 let saveTimer = 0;
-function saveState(delay = 300) {
+let pendingBody = null;
+
+function saveState(delay = 250) {
   if (stt.state !== "done") return;
+  pendingBody = JSON.stringify(st.state);
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    jfetch("/anima_char/state", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(st.state),
-    }).catch((e) => toast(`保存失败：${e.message || e}`, false));
-  }, delay);
+  saveTimer = setTimeout(flushState, delay);
+}
+
+function flushState() {
+  clearTimeout(saveTimer);
+  if (!pendingBody) return;
+  const body = pendingBody;
+  pendingBody = null;
+  jfetch("/anima_char/state", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body,
+  }).catch((e) => toast(`保存失败：${e.message || e}`, false))
+    .finally(() => { if (pendingBody === body) pendingBody = null; });
+}
+
+// 关 ComfyUI / 关标签页时把还没发出去的那一次立刻送出，
+// 否则防抖窗口内退出就丢收藏（用户 2026-11-17 报的「退出后数据没了」）
+function flushOnExit() {
+  if (!pendingBody) return;
+  const body = pendingBody;
+  pendingBody = null;
+  try {
+    navigator.sendBeacon("/anima_char/state",
+      new Blob([body], { type: "application/json" }));
+  } catch {
+    try {
+      jfetch("/anima_char/state", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body,
+      });
+    } catch {}
+  }
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushOnExit);
+  window.addEventListener("beforeunload", flushOnExit);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushOnExit();
+  });
 }
 
 /* ---------- 写回节点 ---------- */
@@ -117,7 +151,7 @@ function pickOne(tag) {
   rec.unshift(tag);
   st.state.recent = rec.slice(0, 24);
   saveState();
-  renderRight();
+  renderInfo();
   renderCards();
   toast(`已选：${c.zh || c.name}`);
 }
@@ -139,7 +173,7 @@ function toggleBan(tag) {
   saveState();
   renderTabs();
   renderCards();
-  renderRight();
+  renderInfo();
 }
 function togglePick(tag) {
   const i = st.state.picked.indexOf(tag);
@@ -154,7 +188,7 @@ function togglePick(tag) {
   saveState();
   renderTabs();
   renderCards();
-  renderRight();
+  renderInfo();
 }
 
 /* ---------- 面板 ---------- */
@@ -270,7 +304,7 @@ function resetList() {
 }
 
 function renderTabs() {
-  if (!panel) return;
+  if (!panel?.nav) return;
   const s = st.state || {};
   const counts = {
     all: st.lib?.characters.length || 0,
@@ -279,7 +313,7 @@ function renderTabs() {
     excluded: (s.excluded || []).length,
     recent: (s.recent || []).length,
   };
-  panel.tabs.querySelectorAll(".tab").forEach((t) => {
+  panel.nav.querySelectorAll(".nav").forEach((t) => {
     const k = t.dataset.k;
     t.classList.toggle("on", st.tab === k);
     const n = t.querySelector(".n");
@@ -287,104 +321,79 @@ function renderTabs() {
   });
 }
 
-/* ---------- 右栏 ---------- */
-function renderRight() {
-  if (!panel?.right) return;
-  const box = panel.right;
+function renderWorks() {
+  if (!panel?.workList) return;
+  const box = panel.workList;
+  const q = st.wq.trim().toLowerCase();
+  const list = (st.works || []).filter((w) =>
+    !q || w.id.includes(q) || (w.name || "").toLowerCase().includes(q) || (w.zh || "").includes(q));
+  box.innerHTML = "";
+  const mk = (id, label, count) => {
+    const row = el("div", "workrow" + (st.work === id ? " on" : ""));
+    row.appendChild(el("span", "wn", label));
+    row.appendChild(el("span", "wc", String(count)));
+    row.onclick = () => { st.work = id; st.shown = BATCH; renderWorks(); renderCards(); };
+    box.appendChild(row);
+  };
+  const total = (st.lib?.characters || []).length;
+  mk("all", "全部作品", total);
+  list.forEach((w) => mk(w.id, w.zh || w.name || w.id, w.count));
+}
+
+function renderInfo() {
+  if (!panel?.info) return;
+  const box = panel.info;
   box.innerHTML = "";
   const cur = st.cur;
-
-  const h = el("div", "r-h");
-  h.appendChild(el("b", null, cur ? (cur.zh || cur.name) : "未选角色"));
-  h.appendChild(el("span", "grow"));
-  if (cur) {
-    const b = el("span", "mini", "清空");
-    b.onclick = () => { st.cur = null; setWidget("role_name", ""); renderRight(); renderCards(); };
-    h.appendChild(b);
-  }
-  box.appendChild(h);
-
   if (!cur) {
-    box.appendChild(el("div", "hint", "点左边的卡片选人；选完节点会自动切到「指定」模式。"));
-    if (st.state.picked.length) {
-      const p = el("div", "picked-list");
-      p.appendChild(el("div", "sub-t", `勾选池 ${st.state.picked.length} 个`));
-      st.state.picked.forEach((t) => {
-        const c = byTag().get(t);
-        const row = el("div", "prow");
-        row.appendChild(el("span", "pn", c ? (c.zh || c.name) : t));
-        const w = el("input", "winput");
-        w.type = "number"; w.min = "0.1"; w.max = "20"; w.step = "0.1";
-        w.value = String(st.state.weights[t] ?? 1);
-        w.onchange = () => {
-          const v = Math.max(0.1, Math.min(20, Number(w.value) || 1));
-          st.state.weights[t] = v;
-          w.value = String(v);
-          saveState();
-        };
-        row.appendChild(w);
-        const x = el("span", "mini", "移除");
-        x.onclick = () => togglePick(t);
-        row.appendChild(x);
-        p.appendChild(row);
-      });
-      box.appendChild(p);
-    }
+    box.appendChild(el("span", "hint-inline",
+      st.state && st.state.picked && st.state.picked.length
+        ? `勾选池 ${st.state.picked.length} 个（权重在右侧列表里调不了，改用卡片 ＋／✓ 增减）`
+        : "点卡片选人；选完节点自动切「指定」模式"));
     return;
   }
-
-  const thumb = el("div", "rthumb");
-  const img = el("img");
+  const img = el("img", "ifo-thumb");
   img.src = thumbUrl(cur.tag);
-  img.onerror = () => { img.style.display = "none"; };
-  thumb.appendChild(img);
-  box.appendChild(thumb);
+  img.onerror = () => { img.style.visibility = "hidden"; };
+  box.appendChild(img);
 
-  const meta = el("div", "rmeta");
-  meta.appendChild(el("div", null, `tag：${cur.tag}`));
-  meta.appendChild(el("div", null, `作品：${cur.work || "—"}`));
-  meta.appendChild(el("div", null, `身份：${cur.trigger}`));
+  const meta = el("div", "ifo-meta");
+  meta.appendChild(el("b", null, cur.zh || cur.name || cur.tag));
+  meta.appendChild(el("span", "ifo-sub",
+    `${cur.tag} · ${cur.work || "—"}`));
   box.appendChild(meta);
 
-  const apBox = el("div", "rsec");
-  apBox.appendChild(el("div", "sub-t", "官方外观"));
-  AP_KEYS.forEach(([k, label]) => {
-    const v = (cur.appearance || {})[k];
-    if (!v || !v.length) return;
-    const row = el("div", "aprow");
-    row.appendChild(el("span", "k", label));
-    row.appendChild(el("span", "v", v.join(", ")));
-    apBox.appendChild(row);
-  });
-  if (!Object.keys(cur.appearance || {}).length) apBox.appendChild(el("div", "hint", "这个角色没有外观数据"));
-  box.appendChild(apBox);
+  const ap = [];
+  const A = AP_KEYS.map(([k]) => k);
+  A.forEach((k) => { const v = (cur.appearance || {})[k]; if (v && v.length) ap.push(...v); });
+  const apSpan = el("span", "ifo-ap", ap.length ? ap.join(", ") : "无外观数据");
+  box.appendChild(apSpan);
 
-  const ofBox = el("div", "rsec");
-  ofBox.appendChild(el("div", "sub-t", "服装预设"));
   const outs = cur.outfits || [];
-  if (!outs.length) ofBox.appendChild(el("div", "hint", "没有服装预设"));
-  outs.forEach((o) => {
-    const row = el("div", "orow");
-    const pick = el("span", "opick", o.id === String(widgetOf("outfit_id")?.value || "") ? "●" : "○");
-    row.appendChild(pick);
-    row.appendChild(el("span", "onm", `${o.zh || o.id} · Lv${o.level}`));
-    row.onclick = () => {
-      setWidget("outfit_id", String(o.id || ""));
+  if (outs.length) {
+    const sel = el("select", "ifo-sel");
+    const curId = String(widgetOf("outfit_id")?.value || "");
+    outs.forEach((o) => {
+      const op = el("option", null, o.zh || o.id);
+      op.value = String(o.id || "");
+      if (op.value === curId) op.selected = true;
+      sel.appendChild(op);
+    });
+    sel.onchange = () => {
+      setWidget("outfit_id", sel.value);
       setWidget("include_outfit", true);
-      renderRight();
+      toast("已启用这套服装，其余套装自动失效");
     };
-    ofBox.appendChild(row);
-  });
-  box.appendChild(ofBox);
+    box.appendChild(sel);
+  }
 
-  const btns = el("div", "rbtns");
-  const b1 = el("div", "btn", "复制角色段");
+  const b1 = el("span", "ifo-btn", "复制");
   b1.onclick = () => copyText(cur.trigger);
-  const b2 = el("div", "btn main", "应用到节点");
+  const b2 = el("span", "ifo-btn main", "应用到节点");
   b2.onclick = () => pickOne(cur.tag);
-  btns.appendChild(b1); btns.appendChild(b2);
-  box.appendChild(btns);
+  box.appendChild(b1); box.appendChild(b2);
 }
+
 
 function copyText(text) {
   const done = () => toast("已复制");
@@ -546,7 +555,7 @@ function refreshLibrary() {
   stt.lib = "idle";
   stt.state = "idle";
   Promise.all([loadLib(), loadState()]).then(() => {
-    renderTabs(); renderCards(); renderRight();
+    renderTabs(); renderCards(); renderInfo();
   }).catch((e) => toast(`刷新失败：${e.message || e}`, false));
 }
 
@@ -583,7 +592,7 @@ function openIo() {
         weights: j.weights || {}, settings: j.settings || {},
       };
       saveState(0);
-      renderTabs(); renderCards(); renderRight();
+      renderTabs(); renderCards(); renderInfo();
       mask.remove();
       toast("已导入");
     } catch {
@@ -627,27 +636,9 @@ function openPanel(node) {
 
   const head = el("div", "ac-head");
   const logo = el("div", "logo");
-  logo.innerHTML = "🎭 角色库 <small>2432 个角色 · 选人即写回节点</small>";
+  logo.innerHTML = "🎭 角色库 <small>点卡片即选人</small>";
   head.appendChild(logo);
-
-  const tabs = el("div", "tabs");
-  [["all", "全部"], ["fav", "收藏"], ["picked", "勾选池"], ["recent", "最近"], ["excluded", "排除"]]
-    .forEach(([k, label]) => {
-      const t = el("div", "tab" + (k === "all" ? " on" : ""));
-      t.dataset.k = k;
-      t.appendChild(el("span", null, label));
-      t.appendChild(el("span", "n", "0"));
-      t.onclick = () => { st.tab = k; renderTabs(); resetList(); };
-      tabs.appendChild(t);
-    });
-  head.appendChild(tabs);
   head.appendChild(el("div", "grow"));
-
-  const workSel = el("select", "sel");
-  const wAll = el("option", null, "全部作品");
-  wAll.value = "all";
-  workSel.appendChild(wAll);
-  head.appendChild(workSel);
 
   const search = el("input", "search");
   search.placeholder = "搜名字 / tag / 作品";
@@ -671,23 +662,46 @@ function openPanel(node) {
   win.appendChild(head);
 
   const body = el("div", "ac-body");
+
+  // 左侧栏：分类 + 作品
+  const side = el("div", "ac-side");
+  const nav = el("div", "ac-nav");
+  [["all", "全部"], ["fav", "收藏"], ["picked", "勾选池"], ["recent", "最近"], ["excluded", "排除"]]
+    .forEach(([k, label]) => {
+      const t = el("div", "nav" + (k === "all" ? " on" : ""));
+      t.dataset.k = k;
+      t.appendChild(el("span", "nn", label));
+      t.appendChild(el("span", "n", "0"));
+      t.onclick = () => { st.tab = k; renderTabs(); resetList(); };
+      nav.appendChild(t);
+    });
+  side.appendChild(nav);
+
+  const wq = el("input", "wq");
+  wq.placeholder = "筛作品…";
+  wq.oninput = () => { st.wq = wq.value; renderWorks(); };
+  side.appendChild(wq);
+  const workList = el("div", "worklist");
+  side.appendChild(workList);
+  body.appendChild(side);
+
   const cards = el("div", "cards");
   cards.onscroll = () => {
     if (cards.scrollTop + cards.clientHeight >= cards.scrollHeight - 240) appendCards();
   };
   body.appendChild(cards);
-  const right = el("div", "right");
-  body.appendChild(right);
   win.appendChild(body);
 
   const foot = el("div", "ac-foot");
-  const footInfo = el("div", null, "");
+  const info = el("div", "ac-info");
+  const footInfo = el("div", "ac-count");
+  foot.appendChild(info);
   foot.appendChild(footInfo);
   win.appendChild(foot);
 
-  panel = { root, win, cards, right, tabs, footInfo, keyHandler: null };
+  panel = { root, win, cards, nav, workList, info, footInfo, tabs: nav, keyHandler: null };
   renderTabs();
-  renderRight();
+  renderInfo();
 
   document.body.appendChild(root);
   root.addEventListener("mousedown", (e) => { if (e.target === root) closePanel(); });
@@ -706,19 +720,7 @@ function openPanel(node) {
   panel.keyHandler = keyHandler;
   window.addEventListener("keydown", keyHandler, true);
 
-  const fillWorks = () => {
-    workSel.innerHTML = "";
-    const o = el("option", null, `全部作品（${st.lib.characters.length}）`);
-    o.value = "all";
-    workSel.appendChild(o);
-    st.works.forEach((w) => {
-      const op = el("option", null, `${w.zh || w.name} · ${w.count}`);
-      op.value = w.id;
-      workSel.appendChild(op);
-    });
-    workSel.value = st.work;
-    workSel.onchange = () => { st.work = workSel.value; st.shown = BATCH; renderCards(); };
-  };
+  const fillWorks = () => { renderWorks(); };
 
   Promise.all([loadLib(), loadState()]).then(() => {
     if (!panel) return;
@@ -729,7 +731,7 @@ function openPanel(node) {
       const curName2 = String(widgetOf("role_name")?.value || "");
       st.cur = byTag().get(curName2) || null;
     }
-    renderRight();
+    renderInfo();
   }).catch((e) => {
     if (!panel) return;
     cards.innerHTML = "";
@@ -817,6 +819,39 @@ const CSS = `
   display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .ac-win .errbox .em{color:#f0a9a9;font-weight:600}
 .ac-win .errbox .eh{color:#8d939e;font-size:12px}
+
+.ac-win .ac-side{width:212px;border-right:1px solid #2e3037;background:#191a1f;display:flex;flex-direction:column;flex:0 0 auto}
+.ac-win .ac-nav{padding:8px 8px 4px;display:flex;flex-direction:column;gap:2px}
+.ac-win .nav{display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:8px;color:#8d939e;cursor:pointer;font-size:12.5px}
+.ac-win .nav:hover{background:#212329;color:#e3e6ec}
+.ac-win .nav.on{background:#262931;color:#fff;box-shadow:inset 2px 0 0 #e6b45c}
+.ac-win .nav .nn{flex:1}
+.ac-win .nav .n{color:#666c77;font-size:11px}
+.ac-win .wq{margin:6px 10px 4px;padding:5px 9px;border-radius:7px;background:#23252b;border:1px solid #383b43;
+  color:#e3e6ec;font-size:11.5px;outline:none}
+.ac-win .worklist{flex:1;overflow:auto;padding:0 8px 10px}
+.ac-win .workrow{display:flex;align-items:center;gap:6px;padding:5px 9px;border-radius:7px;cursor:pointer;
+  color:#8d939e;font-size:11.5px}
+.ac-win .workrow:hover{background:#212329;color:#e3e6ec}
+.ac-win .workrow.on{background:#262931;color:#e6b45c}
+.ac-win .workrow .wn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ac-win .workrow .wc{color:#666c77;font-size:10.5px}
+.ac-win .ac-foot{display:flex;align-items:center;gap:12px;padding:8px 14px;border-top:1px solid #2e3037;
+  flex:0 0 auto;min-height:56px}
+.ac-win .ac-info{flex:1;display:flex;align-items:center;gap:10px;min-width:0}
+.ac-win .ifo-thumb{width:38px;height:38px;border-radius:7px;object-fit:cover;background:#16171b;flex:0 0 auto}
+.ac-win .ifo-meta{display:flex;flex-direction:column;line-height:1.35;flex:0 0 auto}
+.ac-win .ifo-meta b{font-size:12.5px;color:#e3e6ec}
+.ac-win .ifo-sub{font-size:10.5px;color:#666c77}
+.ac-win .ifo-ap{flex:1;min-width:0;color:#8d939e;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ac-win .ifo-sel{padding:4px 8px;border-radius:7px;background:#23252b;border:1px solid #383b43;color:#e3e6ec;
+  font-size:11.5px;max-width:150px;flex:0 0 auto}
+.ac-win .ifo-btn{padding:5px 13px;border-radius:8px;background:#262931;border:1px solid #3a3e48;color:#dde2ea;
+  cursor:pointer;font-size:11.5px;flex:0 0 auto}
+.ac-win .ifo-btn:hover{border-color:#4a4e59}
+.ac-win .ifo-btn.main{background:linear-gradient(180deg,#3f8f6f,#35795d);border-color:#4aa17c;color:#fff;font-weight:600}
+.ac-win .hint-inline{color:#666c77;font-size:11.5px}
+.ac-win .ac-count{color:#666c77;font-size:11px;flex:0 0 auto}
 .ac-mask2{position:fixed;inset:0;background:rgba(8,9,12,.7);z-index:100005;display:flex;align-items:center;justify-content:center}
 .ac-edit{width:min(700px,94vw);max-height:90vh;background:#1b1c21;border:1px solid #34373f;border-radius:12px;
   display:flex;flex-direction:column;overflow:hidden;color:#e3e6ec;
