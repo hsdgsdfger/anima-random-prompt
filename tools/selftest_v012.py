@@ -89,7 +89,7 @@ r = engine.generate(level="sfw", seed=7, role_prompt="1boy, penis, long hair", q
 ts = [t.lower() for t in tags_of(r["positive"])]
 check("男性词被丢弃", "1boy" not in ts and "penis" not in ts, r["positive"])
 check("不出现 1girl+1boy 并存", not ("1boy" in ts and "1girl" in ts))
-check("report 标注拒绝数", "已拒绝" in r["report"], r["report"])
+check("report 标注剔除数", "已剔除" in r["report"], r["report"])
 
 r = engine.generate(level="sfw", seed=7, scene_mode="scene", role_prompt="hatsune miku")
 check("场景路径含角色词", "hatsune miku" in r["positive"], r["positive"][:120])

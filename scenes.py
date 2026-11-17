@@ -29,7 +29,8 @@ GARMENT = re.compile(
     r"jeans|pants|trousers|shorts|slacks|leggings|kimono|yukata|jinbei|qipao|"
     r"hanfu|sari|robe|bathrobe|pajamas|nightgown|leotard|bodysuit|swimsuit|"
     r"bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|apron|"
-    r"cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler)\b",
+    r"cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler|"
+    r"clothes|outfit|\w*suit|\w*sleeves?|\w*coat|knitwear|swimwear|wear)\b",
     re.I)
 HOSIERY = re.compile(
     r"\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|"
@@ -46,16 +47,29 @@ CORE = ("hair", "hair_color", "face", "eye_color", "body", "clothing", "accessor
 # 现实中必须换装的场景：泳池 / 海边 / 浴场 / 温泉 / 淋浴。
 # 这类场景穿常服在画面上不成立，所以服装由场景决定，角色自带的那套让位。
 SPECIAL_SCENE = re.compile(
-    r"pool|beach|onsen|bath|shower|swim|sea_|ocean|lake|river|water|aquarium", re.I)
+    r"pool|beach|onsen|bath|shower|swim|sea_|ocean|lake|river|water", re.I)
+
+# 数据里 water=True 但实际穿常服的场景：水族馆是「参观」，不是下水
+NOT_SPECIAL = {"aquarium_day"}
+
+
+_SPECIAL_CACHE = {}
 
 
 def is_special_scene(bundle_id):
-    """该场景是否属于「必须换装」的场景（服装由场景优先）。"""
+    """该场景是否属于「必须换装」的场景（服装由场景优先）。结果缓存，每轮都要调。"""
+    key = str(bundle_id or "")
+    if key in _SPECIAL_CACHE:
+        return _SPECIAL_CACHE[key]
+    if key in NOT_SPECIAL:
+        _SPECIAL_CACHE[key] = False
+        return False
     sc, _, _ = _load()
     b = next((x for x in sc["bundles"] if x["id"] == bundle_id), None)
-    if not b:
-        return bool(SPECIAL_SCENE.search(str(bundle_id or "")))
-    return bool(b.get("water")) or bool(SPECIAL_SCENE.search(str(bundle_id or "")))
+    val = (bool(b.get("water")) or bool(SPECIAL_SCENE.search(key))) if b \
+        else bool(SPECIAL_SCENE.search(key))
+    _SPECIAL_CACHE[key] = val
+    return val
 
 
 def _load():

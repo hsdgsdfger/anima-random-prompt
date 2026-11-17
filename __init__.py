@@ -21,7 +21,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.1.14"
+__version__ = "0.1.15"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
@@ -83,7 +83,7 @@ class PromptForgeRandom:
                 "appearance_follow": ("BOOLEAN", {"default": True,
                                                   "tooltip": "角色输入非空时，发型 / 发色 / 面部 / 瞳色 / 身材不再随机，交给角色输入。关掉则仍会随机抽，可能和角色官方设定打架"}),
                 "outfit_follow": ("BOOLEAN", {"default": False,
-                                              "tooltip": "角色输入非空时，服装与配饰也不再随机。角色节点勾了「输出服装」时打开它"}),
+                                              "tooltip": "角色输入里带服装时，服装与配饰不再随机（交给角色输入）；角色没带服装则照常随机。泳池/海边/温泉这类场景仍由场景决定服装"}),
             },
         }
 

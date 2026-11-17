@@ -100,11 +100,19 @@ _GARMENT = re.compile(
     r"jeans|pants|trousers|shorts|slacks|leggings|kimono|yukata|jinbei|qipao|"
     r"hanfu|sari|robe|bathrobe|pajamas|nightgown|leotard|bodysuit|swimsuit|"
     r"bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|apron|"
-    r"cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler)\b",
+    r"cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler|"
+    r"clothes|outfit|\w*suit|\w*sleeves?|\w*coat|knitwear|swimwear|wear)\b",
     re.I)
 _HOSIERY = re.compile(
     r"\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|"
     r"garter straps?|garter belt)\b", re.I)
+
+# 低档位要剔除的外部服装：泳装 / 内衣。leotard / bodysuit 不在此列
+# （2B、明日香这类是战斗服，sfw 档穿它们不算越档）。
+_NSFW_CLOTH = re.compile(
+    r"\b(bikini|swimsuit|micro bikini|sling|string bikini|lingerie|underwear|"
+    r"panties|bra|pasties|see-through|transparent|topless|nude|naked|"
+    r"sideboob|underboob|swimwear)\b", re.I)
 
 # 外部角色词里"算不算带了外观"：发/瞳/皮肤/身材类
 _APPEAR_HINT = re.compile(
@@ -153,13 +161,22 @@ def tag_level(en):
 
 
 def drawable(cat_id, lv):
-    """候选池：只保留 未标记 meta、且档位 <= 目标档位 的标签。"""
+    """候选池：只保留 未标记 meta、且档位 <= 目标档位 的标签。
+
+    结果按 (分类, 档位) 缓存 —— 出一次词要调 30 多次（20 个槽位 + nsfw 四类），
+    每次遍历几百条纯属浪费。返回的 list 只读，调用方都在上面做推导式，不会改它。
+    """
+    key = ("pool", cat_id, int(lv))
+    hit = _CACHE.get(key)
+    if hit is not None:
+        return hit
     out = []
     for t in _cat_map().get(cat_id, {}).get("tags", []):
         if t.get("meta"):
             continue
         if int(t["lv"]) <= lv:
             out.append(t)
+    _CACHE[key] = out
     return out
 
 
@@ -292,21 +309,9 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     override = str(override_text or "").strip()
     mixed = str(override_mode or "direct") == "mixed"
     ext_kept, ext_rejected = split_role(role_prompt)
-    ext_subjects = [t for t in ext_kept if SUBJECT_TOKEN.search(t)]
-    ext_others = [t for t in ext_kept if not SUBJECT_TOKEN.search(t)]
-
-    # 外部角色输入存在时，外观 / 服装是否让位（REQ：角色外观必须跟着提示词走）
-    follow = set()
-    if ext_kept:
-        # 让位要看外部**实际带了什么**：无条件让位会让服装槽永久关闭，
-        # 角色节点没输出服装时整段提示词一件衣服都没有 —— 模型只能自己编，
-        # sfw 档在雪地里画出比基尼就是这么来的（用户 2026-11-17 报的）。
-        has_appear = any(_APPEAR_HINT.search(t) for t in ext_kept)
-        has_cloth = any(_GARMENT.search(t) for t in ext_kept)
-        if appearance_follow and has_appear:
-            follow.update(["hair", "hair_color", "face", "eye_color", "body"])
-        if outfit_follow and has_cloth:
-            follow.update(["clothing", "accessory"])
+    # 主体词 / 让位槽位都要等目标档位定下来再算（档位会过滤掉泳装内衣），
+    # 先占位，下面 pick_target 之后填。
+    ext_subjects, ext_others, follow = [], [], set()
 
     # 覆盖直通：直接当正向，完全跳过随机（负向按用户选择档位）
     if override and not mixed:
@@ -329,6 +334,29 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     rng = random.Random(seed) if int(seed) >= 0 else random.Random()
     tv, basis = pick_target(sel_key, settings, rng)
 
+    # 低档位剔除外部输入里的泳装 / 内衣：角色库的 outfit 是统计出来的，
+    # 有 8 个角色的「官方服装」本身就是比基尼（如 bay_(nikke)），
+    # sfw 档照搬进来就是「全年龄出泳装」（用户 2026-11-17 报的）。
+    if tv <= 1 and ext_kept:
+        kept2 = [t for t in ext_kept if not _NSFW_CLOTH.search(t)]
+        ext_rejected += len(ext_kept) - len(kept2)
+        ext_kept = kept2
+
+    ext_subjects = [t for t in ext_kept if SUBJECT_TOKEN.search(t)]
+    ext_others = [t for t in ext_kept if not SUBJECT_TOKEN.search(t)]
+
+    # 外部角色输入存在时，外观 / 服装是否让位（REQ：角色外观必须跟着提示词走）
+    if ext_kept:
+        # 让位要看外部**实际带了什么**：无条件让位会让服装槽永久关闭，
+        # 角色节点没输出服装时整段提示词一件衣服都没有 —— 模型只能自己编，
+        # sfw 档在雪地里画出比基尼就是这么来的（用户 2026-11-17 报的）。
+        has_appear = any(_APPEAR_HINT.search(t) for t in ext_kept)
+        has_cloth = any(_GARMENT.search(t) for t in ext_kept)
+        if appearance_follow and has_appear:
+            follow.update(["hair", "hair_color", "face", "eye_color", "body"])
+        if outfit_follow and has_cloth:
+            follow.update(["clothing", "accessory"])
+
     try:
         weights = json.loads(slot_weights) if str(slot_weights or "").strip() else {}
         if not isinstance(weights, dict):
@@ -340,7 +368,7 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
             f"本次目标档位: Lv{tv} · {LEVEL_ZH.get(TARGET_LEVELS[tv], '')}",
             f"抽样依据: {basis}"]
     if ext_rejected:
-        head.append(f"已拒绝 {ext_rejected} 个男性词")
+        head.append(f"已剔除 {ext_rejected} 个不适用词（男性词 / 低档位泳装内衣）")
     if ext_kept:
         head.append("外部角色: 未按档位过滤")
     if follow:
@@ -829,17 +857,30 @@ def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, 
     }
 
 
-def build_negative(lv, positive, enabled=True):
-    if not enabled:
-        return ""
-    rng = random.Random(0)  # 负面词固定，保证同 seed 全程可复现
+def _neg_base():
+    """负向前半段（固定 seed=0 洗过的那 26 条），算一次缓存。
+
+    这张表跟档位、正向都无关，每张图重新 shuffle 一遍没有意义。
+    """
+    if "neg_base" in _CACHE:
+        return _CACHE["neg_base"]
+    rng = random.Random(0)
     neg = list(_CORE_NEG)
-    pool = [t["en"] for t in drawable("negative", 99) if t["en"].lower() not in {x.lower() for x in neg}]
+    pool = [t["en"] for t in drawable("negative", 99)
+            if t["en"].lower() not in {x.lower() for x in neg}]
     rng.shuffle(pool)
     for en in pool:
         if len(neg) >= 26:
             break
         neg.append(en)
+    _CACHE["neg_base"] = neg
+    return neg
+
+
+def build_negative(lv, positive, enabled=True):
+    if not enabled:
+        return ""
+    neg = list(_neg_base())     # 拷贝：下面要按正向去重
     pos = {p.strip().lower() for p in positive.split(",")}
     neg = [n for n in neg if n.lower() not in pos]
     if lv >= 2:
