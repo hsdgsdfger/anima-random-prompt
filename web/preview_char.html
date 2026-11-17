@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Anima 角色库 · 面板预览</title>
+<style>
+html,body{margin:0;height:100%;background:#15161a;overflow:hidden}
+</style>
+</head>
+<body>
+<script type="module">
+// 不装节点也能看界面：用三条假数据挡住后端请求
+const MOCK = {
+  works: [
+    { id: "vocaloid", name: "vocaloid", zh: "V家", count: 2 },
+    { id: "touhou", name: "touhou", zh: "东方Project", count: 1 },
+  ],
+  characters: [
+    { tag: "hatsune_miku", name: "hatsune miku", zh: "初音未来", work: "vocaloid",
+      trigger: "hatsune miku, vocaloid", pop: 103500, thumb: "", custom: false,
+      appearance: { hair_color: ["aqua hair"], hair_style: ["very long hair", "twintails"], eyes: ["aqua eyes", "blue eyes"] },
+      outfits: [{ id: "default", zh: "官方服装", level: 0, tags: ["necktie", "sleeveless shirt", "black skirt"] }] },
+    { tag: "kagamine_rin", name: "kagamine rin", zh: "镜音铃", work: "vocaloid",
+      trigger: "kagamine rin, vocaloid", pop: 52000, thumb: "", custom: false,
+      appearance: { hair_color: ["blonde hair"], hair_style: ["short hair"], eyes: ["blue eyes"] },
+      outfits: [{ id: "default", zh: "官方服装", level: 0, tags: ["serafuku", "necktie"] }] },
+    { tag: "reimu_hakurei", name: "reimu hakurei", zh: "博丽灵梦", work: "touhou",
+      trigger: "reimu hakurei, touhou", pop: 41000, thumb: "", custom: false,
+      appearance: { hair_color: ["brown hair"], eyes: ["brown eyes"] },
+      outfits: [{ id: "default", zh: "巫女服", level: 0, tags: ["miko", "detached sleeves"] }] },
+  ],
+};
+const state = { favorites: [], excluded: [], picked: [], recent: [], weights: {}, settings: {} };
+globalThis.__acFetch = (url, opt) => Promise.resolve().then(() => {
+  const u = String(url);
+  const json = (j) => ({ ok: true, status: 200, json: () => Promise.resolve(j), text: () => Promise.resolve("") });
+  if (opt && opt.method === "POST") return json({ ok: true });
+  if (u.includes("/library")) return json(MOCK);
+  if (u.includes("/state")) return json(state);
+  return { ok: false, status: 404, json: () => Promise.resolve({}), text: () => Promise.resolve("") };
+});
+
+const { openPanel } = await import("./anima_char_panel_v1.js");
+const node = {
+  widgets: [
+    { name: "mode", value: "随机" }, { name: "seed", value: -1 },
+    { name: "role_name", value: "" }, { name: "work_filter", value: "" },
+    { name: "include_appearance", value: true }, { name: "include_outfit", value: false },
+    { name: "outfit_level", value: "全年龄" }, { name: "outfit_id", value: "" },
+    { name: "extra_prompt", value: "" }, { name: "random_each_run", value: true },
+  ],
+  setDirtyCanvas() {},
+};
+openPanel(node);
+</script>
+</body>
+</html>

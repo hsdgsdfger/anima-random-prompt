@@ -1,0 +1,1839 @@
+{
+"adjusting clothes": [
+"indoor"
+],
+"adjusting glasses": [
+"indoor"
+],
+"adjusting hair": [
+"indoor",
+"water",
+"night"
+],
+"afternoon": [
+"indoor",
+"outdoor",
+"water",
+"cold"
+],
+"alien": [
+"monster"
+],
+"android": [
+"monster"
+],
+"angel": [
+"monster"
+],
+"ankle boots": [
+"indoor",
+"outdoor",
+"night"
+],
+"apron": [
+"indoor",
+"outdoor"
+],
+"aquarium": [
+"indoor",
+"water"
+],
+"arachne": [
+"monster"
+],
+"arm raised": [
+"indoor"
+],
+"armor": [
+"outdoor",
+"night",
+"monster"
+],
+"autumn": [
+"outdoor",
+"cold"
+],
+"autumn leaves": [
+"outdoor"
+],
+"badge": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"bag": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night"
+],
+"bakery": [
+"indoor"
+],
+"balcony": [
+"outdoor"
+],
+"ball": [
+"outdoor",
+"water"
+],
+"bandage": [
+"indoor"
+],
+"banshee": [
+"monster"
+],
+"barefoot": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"basket": [
+"outdoor",
+"monster"
+],
+"basketball": [
+"indoor"
+],
+"bathrobe": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night"
+],
+"bathroom": [
+"indoor",
+"water",
+"night"
+],
+"bathtub": [
+"indoor",
+"water",
+"night"
+],
+"beach": [
+"outdoor",
+"water"
+],
+"beanie": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"beastman": [
+"monster"
+],
+"bed": [
+"indoor"
+],
+"bedroom": [
+"indoor",
+"night",
+"monster"
+],
+"bending over": [
+"indoor",
+"outdoor"
+],
+"bikini": [
+"outdoor",
+"water",
+"monster"
+],
+"blackboard": [
+"indoor"
+],
+"blanket": [
+"indoor",
+"night",
+"monster"
+],
+"blazer": [
+"indoor"
+],
+"blouse": [
+"indoor",
+"outdoor",
+"monster"
+],
+"bodysuit": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"book": [
+"indoor",
+"outdoor",
+"water",
+"night",
+"monster"
+],
+"book stack": [
+"indoor"
+],
+"bookshelf": [
+"indoor"
+],
+"bookstore": [
+"indoor"
+],
+"boots": [
+"indoor",
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"bouquet": [
+"outdoor",
+"monster"
+],
+"bracelet": [
+"outdoor",
+"water"
+],
+"bread": [
+"indoor"
+],
+"breeze": [
+"outdoor",
+"water",
+"night",
+"monster"
+],
+"bridge": [
+"outdoor",
+"water",
+"cold",
+"night"
+],
+"broken building": [
+"outdoor"
+],
+"bucket": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night"
+],
+"business suit": [
+"indoor"
+],
+"butterfly girl": [
+"monster"
+],
+"cafe": [
+"indoor"
+],
+"cake": [
+"indoor"
+],
+"camera": [
+"indoor",
+"outdoor",
+"water"
+],
+"camisole": [
+"indoor",
+"night",
+"monster"
+],
+"camp": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"campfire": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"candle": [
+"indoor",
+"night",
+"monster"
+],
+"cape": [
+"outdoor",
+"night",
+"monster"
+],
+"cardigan": [
+"indoor",
+"outdoor",
+"water",
+"night",
+"monster"
+],
+"carrying bag": [
+"outdoor"
+],
+"casting spell": [
+"outdoor",
+"night",
+"monster"
+],
+"castle": [
+"outdoor",
+"night",
+"monster"
+],
+"cherry blossoms": [
+"outdoor",
+"monster"
+],
+"chimera": [
+"monster"
+],
+"cinema": [
+"indoor",
+"night"
+],
+"city street": [
+"outdoor",
+"cold",
+"night"
+],
+"classroom": [
+"indoor"
+],
+"clear sky": [
+"outdoor",
+"water"
+],
+"cliff": [
+"outdoor",
+"cold"
+],
+"climbing": [
+"outdoor",
+"cold"
+],
+"cloak": [
+"outdoor",
+"night",
+"monster"
+],
+"clouds": [
+"outdoor"
+],
+"coat": [
+"indoor",
+"outdoor",
+"night"
+],
+"cocktail dress": [
+"indoor",
+"night"
+],
+"coffee": [
+"outdoor",
+"night"
+],
+"coffee mug": [
+"indoor"
+],
+"cold": [
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"competition swimsuit": [
+"indoor",
+"outdoor",
+"water",
+"monster"
+],
+"confetti": [
+"indoor",
+"night"
+],
+"convenience store": [
+"indoor",
+"night"
+],
+"cookie": [
+"indoor"
+],
+"coral reef": [
+"outdoor",
+"water",
+"monster"
+],
+"countryside": [
+"outdoor"
+],
+"crosswalk": [
+"outdoor"
+],
+"crown": [
+"outdoor",
+"night",
+"monster"
+],
+"crystal": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"crystal ball": [
+"outdoor",
+"night",
+"monster"
+],
+"crystal cave": [
+"outdoor",
+"night",
+"monster"
+],
+"cup": [
+"indoor",
+"outdoor",
+"cold",
+"night"
+],
+"cyborg": [
+"monster"
+],
+"dancing": [
+"indoor",
+"night"
+],
+"dango": [
+"outdoor",
+"night"
+],
+"dark elf": [
+"monster"
+],
+"day": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"deep sea": [
+"outdoor",
+"water",
+"monster"
+],
+"demon girl": [
+"monster"
+],
+"desert": [
+"outdoor"
+],
+"desk": [
+"indoor"
+],
+"dhampir": [
+"monster"
+],
+"dormitory": [
+"indoor",
+"night"
+],
+"dozing": [
+"indoor",
+"night",
+"monster"
+],
+"dragon girl": [
+"monster"
+],
+"dress": [
+"indoor",
+"outdoor",
+"water",
+"night",
+"monster"
+],
+"drinking": [
+"indoor"
+],
+"dryad": [
+"monster"
+],
+"duffle coat": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"dullahan": [
+"monster"
+],
+"dungeon": [
+"outdoor",
+"night",
+"monster"
+],
+"dusk": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"ear muffs": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"earrings": [
+"indoor",
+"night"
+],
+"eating": [
+"indoor",
+"outdoor",
+"night"
+],
+"elf": [
+"monster"
+],
+"evening gown": [
+"indoor",
+"night"
+],
+"exploring": [
+"outdoor"
+],
+"fairy": [
+"monster"
+],
+"fallen angel": [
+"monster"
+],
+"falling leaves": [
+"outdoor"
+],
+"fan": [
+"outdoor",
+"monster"
+],
+"festival": [
+"outdoor",
+"night"
+],
+"field": [
+"outdoor"
+],
+"fireworks": [
+"outdoor",
+"night"
+],
+"fish": [
+"indoor",
+"outdoor",
+"water",
+"monster"
+],
+"floating": [
+"indoor",
+"outdoor",
+"water",
+"night",
+"monster"
+],
+"floating island": [
+"outdoor"
+],
+"flower": [
+"indoor",
+"outdoor",
+"monster"
+],
+"flower field": [
+"outdoor",
+"monster"
+],
+"fog": [
+"outdoor",
+"night",
+"monster"
+],
+"folding fan": [
+"outdoor",
+"night",
+"monster"
+],
+"food stall": [
+"outdoor",
+"night"
+],
+"forest": [
+"outdoor",
+"cold"
+],
+"frying pan": [
+"indoor"
+],
+"garden": [
+"indoor",
+"outdoor",
+"monster"
+],
+"geta": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"ghost": [
+"monster"
+],
+"glasses": [
+"indoor",
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"gloves": [
+"indoor",
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"goggles": [
+"indoor",
+"outdoor",
+"water",
+"monster"
+],
+"golem": [
+"monster"
+],
+"gorgon": [
+"monster"
+],
+"gothic lolita": [
+"outdoor",
+"night",
+"monster"
+],
+"greenhouse": [
+"indoor"
+],
+"griffin": [
+"monster"
+],
+"guitar": [
+"indoor",
+"night"
+],
+"gym shorts": [
+"indoor"
+],
+"gym uniform": [
+"indoor"
+],
+"gymnasium": [
+"indoor"
+],
+"hair clip": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"hair flower": [
+"indoor",
+"outdoor",
+"monster"
+],
+"hair ornament": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"hair ribbon": [
+"indoor",
+"outdoor",
+"monster"
+],
+"hairband": [
+"indoor",
+"water",
+"night",
+"monster"
+],
+"hairbrush": [
+"indoor",
+"water",
+"night"
+],
+"hakama": [
+"outdoor",
+"monster"
+],
+"hallway": [
+"indoor"
+],
+"hands in pockets": [
+"outdoor",
+"cold",
+"night"
+],
+"haori": [
+"outdoor",
+"monster"
+],
+"harpy": [
+"monster"
+],
+"hat": [
+"outdoor"
+],
+"hawaiian shirt": [
+"outdoor",
+"water"
+],
+"headphones": [
+"indoor",
+"night",
+"monster"
+],
+"heart hands": [
+"indoor",
+"night"
+],
+"heat haze": [
+"outdoor"
+],
+"helmet": [
+"indoor",
+"night",
+"monster"
+],
+"high elf": [
+"monster"
+],
+"high heels": [
+"indoor",
+"night"
+],
+"holding book": [
+"indoor"
+],
+"holding cup": [
+"indoor",
+"night"
+],
+"holding flower": [
+"indoor",
+"outdoor",
+"monster"
+],
+"holding phone": [
+"indoor"
+],
+"holding sword": [
+"outdoor",
+"night",
+"monster"
+],
+"holding tray": [
+"indoor"
+],
+"holding umbrella": [
+"outdoor",
+"night"
+],
+"hooded cloak": [
+"outdoor",
+"night",
+"monster"
+],
+"hoodie": [
+"indoor",
+"outdoor",
+"water",
+"night"
+],
+"hospital room": [
+"indoor"
+],
+"hot spring": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night"
+],
+"hugging knees": [
+"indoor",
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"infirmary": [
+"indoor"
+],
+"inn": [
+"indoor",
+"night"
+],
+"insect girl": [
+"monster"
+],
+"jeans": [
+"indoor",
+"outdoor",
+"cold",
+"night"
+],
+"jersey": [
+"indoor"
+],
+"jinbei": [
+"outdoor",
+"night"
+],
+"jumping": [
+"indoor"
+],
+"kettle": [
+"indoor"
+],
+"keyboard": [
+"indoor"
+],
+"kimono": [
+"outdoor",
+"night",
+"monster"
+],
+"kitchen": [
+"indoor"
+],
+"kite": [
+"outdoor"
+],
+"kitsune": [
+"monster"
+],
+"knee boots": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"knee pads": [
+"indoor"
+],
+"kneeling": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"knit sweater": [
+"indoor",
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"kraken": [
+"monster"
+],
+"lab coat": [
+"indoor"
+],
+"laboratory": [
+"indoor"
+],
+"lamia": [
+"monster"
+],
+"lantern": [
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"laptop": [
+"indoor"
+],
+"leaning back": [
+"outdoor",
+"water",
+"cold"
+],
+"leaning on wall": [
+"indoor",
+"outdoor"
+],
+"leggings": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"leotard": [
+"indoor",
+"outdoor",
+"night"
+],
+"library": [
+"indoor"
+],
+"light rain": [
+"outdoor",
+"night"
+],
+"loafers": [
+"indoor",
+"outdoor",
+"water",
+"night"
+],
+"locker room": [
+"indoor"
+],
+"long coat": [
+"outdoor",
+"night"
+],
+"long skirt": [
+"indoor"
+],
+"looking at viewer": [
+"indoor",
+"outdoor",
+"water",
+"night"
+],
+"looking back": [
+"outdoor",
+"night",
+"monster"
+],
+"looking outside": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night"
+],
+"looking up": [
+"indoor",
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"lying": [
+"indoor",
+"water",
+"night",
+"monster"
+],
+"lying on side": [
+"indoor"
+],
+"map": [
+"outdoor",
+"cold"
+],
+"market": [
+"outdoor",
+"night"
+],
+"mary janes": [
+"indoor",
+"outdoor",
+"monster"
+],
+"mask": [
+"outdoor",
+"night"
+],
+"medusa": [
+"monster"
+],
+"merfolk": [
+"monster"
+],
+"mermaid": [
+"monster"
+],
+"microphone": [
+"indoor",
+"night"
+],
+"miko": [
+"outdoor",
+"monster"
+],
+"mimic": [
+"monster"
+],
+"mirror": [
+"indoor",
+"water",
+"night"
+],
+"mist": [
+"outdoor",
+"night",
+"monster"
+],
+"money": [
+"outdoor"
+],
+"monitor": [
+"indoor",
+"night",
+"monster"
+],
+"monster girl": [
+"monster"
+],
+"morning": [
+"indoor",
+"outdoor",
+"water",
+"night",
+"monster"
+],
+"mountain": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"museum": [
+"indoor"
+],
+"naga": [
+"monster"
+],
+"necklace": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"nekomata": [
+"monster"
+],
+"neon lights": [
+"outdoor",
+"night"
+],
+"newspaper": [
+"outdoor",
+"night"
+],
+"night": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"nightgown": [
+"indoor",
+"night",
+"monster"
+],
+"noon": [
+"outdoor"
+],
+"notebook": [
+"indoor"
+],
+"nurse cap": [
+"indoor"
+],
+"nurse uniform": [
+"indoor"
+],
+"nymph": [
+"monster"
+],
+"ocean": [
+"outdoor",
+"water"
+],
+"office": [
+"indoor"
+],
+"office lady": [
+"indoor"
+],
+"one-piece swimsuit": [
+"indoor",
+"outdoor",
+"water",
+"monster"
+],
+"oni": [
+"monster"
+],
+"onsen": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night"
+],
+"outer space": [
+"indoor",
+"night",
+"monster"
+],
+"overalls": [
+"outdoor"
+],
+"overgrown": [
+"outdoor"
+],
+"pajamas": [
+"indoor",
+"water",
+"night",
+"monster"
+],
+"palm tree": [
+"outdoor",
+"water"
+],
+"parasol": [
+"outdoor",
+"water",
+"monster"
+],
+"park": [
+"outdoor",
+"monster"
+],
+"parka": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"pegasus": [
+"monster"
+],
+"pen": [
+"indoor"
+],
+"pencil skirt": [
+"indoor"
+],
+"petals": [
+"outdoor",
+"monster"
+],
+"phoenix": [
+"monster"
+],
+"piano": [
+"indoor",
+"night"
+],
+"picnic basket": [
+"outdoor"
+],
+"pillow": [
+"indoor",
+"night",
+"monster"
+],
+"pinafore": [
+"outdoor",
+"monster"
+],
+"pixie": [
+"monster"
+],
+"plant girl": [
+"monster"
+],
+"plate": [
+"indoor"
+],
+"pleated skirt": [
+"indoor"
+],
+"plugsuit": [
+"indoor",
+"night",
+"monster"
+],
+"plush toy": [
+"indoor",
+"night",
+"monster"
+],
+"pointing": [
+"indoor",
+"water"
+],
+"poolside": [
+"indoor",
+"outdoor",
+"water"
+],
+"pot": [
+"indoor"
+],
+"potion": [
+"outdoor",
+"night",
+"monster"
+],
+"praying": [
+"outdoor",
+"monster"
+],
+"public bath": [
+"indoor",
+"water",
+"night"
+],
+"pumps": [
+"indoor"
+],
+"rain": [
+"outdoor",
+"night"
+],
+"raincoat": [
+"outdoor",
+"night"
+],
+"reaching out": [
+"indoor",
+"outdoor",
+"water",
+"night",
+"monster"
+],
+"reading": [
+"indoor",
+"night",
+"monster"
+],
+"restaurant": [
+"indoor"
+],
+"rice cooker": [
+"indoor"
+],
+"rice field": [
+"outdoor"
+],
+"river": [
+"outdoor",
+"water"
+],
+"rooftop": [
+"outdoor"
+],
+"ruins": [
+"outdoor",
+"night",
+"monster"
+],
+"running": [
+"indoor"
+],
+"running shoes": [
+"indoor"
+],
+"sailor collar": [
+"indoor"
+],
+"sandals": [
+"indoor",
+"outdoor",
+"water",
+"night",
+"monster"
+],
+"sarong": [
+"outdoor",
+"water"
+],
+"scarf": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"school gate": [
+"indoor"
+],
+"school hallway": [
+"indoor"
+],
+"school uniform": [
+"indoor",
+"outdoor"
+],
+"scroll": [
+"outdoor",
+"night",
+"monster"
+],
+"scylla": [
+"monster"
+],
+"seashell": [
+"outdoor",
+"water"
+],
+"serafuku": [
+"indoor"
+],
+"seraph": [
+"monster"
+],
+"shopping district": [
+"outdoor"
+],
+"shorts": [
+"indoor",
+"outdoor"
+],
+"shower": [
+"indoor",
+"water",
+"night"
+],
+"shrine": [
+"outdoor",
+"monster"
+],
+"siren": [
+"monster"
+],
+"sitting": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"sitting on bed": [
+"indoor",
+"night",
+"monster"
+],
+"sitting on chair": [
+"indoor",
+"night"
+],
+"sitting on floor": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"skipping rope": [
+"indoor"
+],
+"skirt": [
+"indoor",
+"outdoor",
+"water",
+"night",
+"monster"
+],
+"sky": [
+"outdoor"
+],
+"sleeping": [
+"indoor",
+"night",
+"monster"
+],
+"sleeping bag": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"slime girl": [
+"monster"
+],
+"slippers": [
+"indoor",
+"water",
+"night",
+"monster"
+],
+"smartphone": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"sneakers": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"snow": [
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"snowfall": [
+"outdoor",
+"water",
+"cold"
+],
+"snowing": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"snowy mountain": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"soap": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night"
+],
+"socks": [
+"indoor",
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"spaceship interior": [
+"indoor",
+"night",
+"monster"
+],
+"sparkler": [
+"outdoor",
+"night"
+],
+"spinning": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"sports bra": [
+"indoor"
+],
+"sports field": [
+"indoor"
+],
+"sportswear": [
+"indoor"
+],
+"spread arms": [
+"outdoor",
+"water"
+],
+"spring": [
+"indoor",
+"outdoor",
+"monster"
+],
+"staff": [
+"outdoor",
+"night",
+"monster"
+],
+"stage": [
+"indoor",
+"night"
+],
+"standing": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"starfish": [
+"outdoor",
+"water",
+"monster"
+],
+"starry night": [
+"indoor",
+"night",
+"monster"
+],
+"starry sky": [
+"indoor",
+"night",
+"monster"
+],
+"stone stairs": [
+"outdoor"
+],
+"straw hat": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"monster"
+],
+"street": [
+"outdoor",
+"cold",
+"night"
+],
+"streetlight": [
+"outdoor",
+"night"
+],
+"stretching": [
+"indoor",
+"outdoor",
+"water"
+],
+"studio": [
+"indoor",
+"night"
+],
+"succubus": [
+"monster"
+],
+"summer": [
+"indoor",
+"outdoor",
+"water",
+"night"
+],
+"sun hat": [
+"outdoor",
+"water",
+"monster"
+],
+"sundress": [
+"indoor",
+"outdoor",
+"water",
+"monster"
+],
+"sunglasses": [
+"outdoor",
+"water"
+],
+"sunny": [
+"outdoor",
+"water"
+],
+"sunset": [
+"outdoor"
+],
+"sweater": [
+"indoor",
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"swim shorts": [
+"outdoor",
+"water"
+],
+"swimming": [
+"indoor",
+"outdoor",
+"water",
+"monster"
+],
+"swimming pool": [
+"indoor",
+"outdoor",
+"water"
+],
+"swimsuit": [
+"indoor",
+"outdoor",
+"water",
+"monster"
+],
+"sword": [
+"outdoor",
+"night",
+"monster"
+],
+"t-shirt": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"tabi": [
+"outdoor",
+"monster"
+],
+"taiyaki": [
+"outdoor",
+"night"
+],
+"tank top": [
+"outdoor"
+],
+"teacup": [
+"indoor"
+],
+"techwear": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"temple": [
+"outdoor",
+"monster"
+],
+"tengu": [
+"monster"
+],
+"tent": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"tentacle hair": [
+"monster"
+],
+"thigh boots": [
+"outdoor",
+"night",
+"monster"
+],
+"ticket": [
+"indoor",
+"outdoor",
+"water",
+"night"
+],
+"torch": [
+"outdoor",
+"night",
+"monster"
+],
+"torii": [
+"outdoor",
+"monster"
+],
+"towel": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night"
+],
+"track suit": [
+"indoor",
+"outdoor",
+"cold"
+],
+"train interior": [
+"indoor"
+],
+"train station": [
+"indoor"
+],
+"treasure chest": [
+"outdoor",
+"night",
+"monster"
+],
+"trench coat": [
+"outdoor",
+"night"
+],
+"trophy": [
+"indoor"
+],
+"turtleneck": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"typing": [
+"indoor"
+],
+"umbrella": [
+"outdoor",
+"night"
+],
+"underwater": [
+"outdoor",
+"water",
+"monster"
+],
+"unicorn": [
+"monster"
+],
+"uniform": [
+"indoor"
+],
+"valkyrie": [
+"monster"
+],
+"vampire": [
+"monster"
+],
+"visor": [
+"indoor",
+"outdoor",
+"night",
+"monster"
+],
+"waitress uniform": [
+"indoor"
+],
+"walking": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"watch": [
+"indoor",
+"outdoor"
+],
+"water": [
+"outdoor",
+"water",
+"monster"
+],
+"water bottle": [
+"indoor",
+"outdoor",
+"water",
+"cold"
+],
+"watermelon": [
+"outdoor",
+"water"
+],
+"waves": [
+"outdoor",
+"water",
+"monster"
+],
+"waving": [
+"indoor",
+"outdoor",
+"night"
+],
+"wet street": [
+"outdoor",
+"night"
+],
+"white breath": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"white coat": [
+"indoor"
+],
+"wind": [
+"outdoor",
+"cold"
+],
+"winter": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"winter coat": [
+"outdoor",
+"cold",
+"night",
+"monster"
+],
+"wraith": [
+"monster"
+],
+"writing": [
+"indoor"
+],
+"yawning": [
+"indoor",
+"night",
+"monster"
+],
+"yukata": [
+"indoor",
+"outdoor",
+"water",
+"cold",
+"night",
+"monster"
+],
+"yuki-onna": [
+"monster"
+],
+"zori": [
+"outdoor",
+"night",
+"monster"
+]
+}

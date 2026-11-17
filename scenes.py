@@ -286,6 +286,9 @@ def build(cap, rng, weights=None, base_prob=0.65, monster=False, has_character=F
     if cap <= 1 and any(s == "nsfw" for s, _ in items):
         return None, None
     for key in CORE:
+        # 有角色时外观交给角色自带标签，这些槽位本来就该是空的（否则一定误判打架）
+        if has_character and key in ("hair", "hair_color", "face", "eye_color", "body"):
+            continue
         if b.on(key) and not any(s == key for s, _ in items):
             return None, None
     return items, bundle["id"]

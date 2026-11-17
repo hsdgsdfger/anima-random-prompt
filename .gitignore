@@ -4,3 +4,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 *.log
+# 用户态配置：收藏 / 最近 / 档位设置（REQ-103）
+userdata/
+# 用户自己传的角色预览图
+custom_thumbs/

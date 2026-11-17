@@ -2,7 +2,9 @@
 """PromptForge Random 的抽取引擎。
 
 设计口径：
-  · 档位在**候选池**这一层先筛（tag.lv <= 档位），不做「抽完再贴评级」；
+  · 档位分两层：**选择档位**（用户选的 level）与**目标档位**（本次实际取词的上限）；
+    目标档位由 settings 的档位分布 / any 配比抽样得到，永远不高于选择档位；
+  · 档位在**候选池**这一层先筛（tag.lv <= 目标档位），不做「抽完再贴评级」；
   · 槽位（slot）= Forge 的分类，按固定顺序拼成一段完整提示词；
   · base_prob 是可选槽位的基准出现概率，slot_weights 可按槽位乘 0~3；
   · seed >= 0 时同一组输入逐字节可复现。
@@ -19,6 +21,9 @@ LEVEL_CHOICES = ["sfw", "suggestive", "explicit", "hardcore", "extreme", "any"]
 LEVEL_NUM = {"sfw": 0, "suggestive": 1, "explicit": 2, "hardcore": 3, "extreme": 4, "any": 99}
 LEVEL_ZH = {"sfw": "全年龄", "suggestive": "擦边", "explicit": "成人",
             "hardcore": "过激", "extreme": "极端", "any": "不限"}
+
+# 档位抽样只认这五档（any 是选择档位，不是目标档位）
+TARGET_LEVELS = ["sfw", "suggestive", "explicit", "hardcore", "extreme"]
 
 # 槽位表：key / 用到的分类 / 是否必出 / 最多几条 / 基准概率 / 标签过滤
 SLOTS = [
@@ -59,6 +64,9 @@ ASM_ORDER = ["subject", "character", "hair", "hair_color", "face", "eye_color", 
 SUBJECT_DENY = re.compile(
     r"\b(1boy|2boys|2girls|3girls|multiple\w*|male focus|couple|twins|siblings|"
     r"androgynous|mature male|child|children|loli|shota|male)\b", re.I)
+
+# 外部角色输入里的主体词：命中即替换默认主体（REQ-104 缺口 5）
+SUBJECT_TOKEN = re.compile(r"\b(1girl|1girls|2girls|3girls|multiple girls|solo|duo)\b", re.I)
 
 # 需要第二个人才能成立的姿势：抽到时主体改成 2girls（不再屏蔽）
 MULTI_POSE = re.compile(
@@ -157,29 +165,130 @@ def pick_character(rng, role_mode, role_name, role_works):
     return rng.choice(pool) if pool else None
 
 
+# ---------------------------------------------------------------- 档位抽样
+
+def _wchoice(rng, weights):
+    """按权重抽一个下标；全 0 时返回 0。"""
+    total = sum(weights)
+    if total <= 0:
+        return 0
+    r = rng.random() * total
+    acc = 0.0
+    for i, w in enumerate(weights):
+        acc += w
+        if r < acc:
+            return i
+    return len(weights) - 1
+
+
+def pick_target(level_key, settings, rng):
+    """抽本次运行的目标档位；返回 (目标档位序号, 抽样依据)。"""
+    st = settings or {}
+
+    if level_key == "any":
+        raw = st.get("any_weights") or {}
+        weights = []
+        for k in TARGET_LEVELS:
+            try:
+                weights.append(max(0.0, float(raw.get(k, 0) or 0)))
+            except (TypeError, ValueError):
+                weights.append(0.0)
+        if sum(weights) <= 0:                     # 全 0 / 损坏 -> 默认 70 / 7.5×4
+            weights = [0.7, 0.075, 0.075, 0.075, 0.075]
+        return _wchoice(rng, weights), "any 配比"
+
+    sel = LEVEL_NUM.get(level_key, 0)
+    if not st.get("level_dist"):
+        return sel, "上限过滤（档位分布未开启）"
+
+    row = (st.get("level_matrix") or {}).get(level_key) or {}
+    weights = []
+    for i, k in enumerate(TARGET_LEVELS):
+        if i > sel:                                # 上三角锁死：永远不越档
+            weights.append(0.0)
+            continue
+        try:
+            weights.append(max(0.0, float(row.get(k, 0) or 0)))
+        except (TypeError, ValueError):
+            weights.append(0.0)
+    if sum(weights) <= 0:
+        return sel, "上限过滤（矩阵无效回退）"
+    return _wchoice(rng, weights), "档位分布矩阵"
+
+
+def _auto_cap(tv):
+    return 28 if tv <= 1 else 32
+
+
+# ---------------------------------------------------------------- 外部角色词
+
+def split_role(role_prompt):
+    """外部角色词：按英文逗号拆分、去空格、忽略大小写去重、丢掉男性词。
+
+    返回 (保留词表, 被拒数量)。被拒的词直接丢弃，不整段拒绝（DEC-04）。
+    """
+    kept, rejected, seen = [], 0, set()
+    for seg in str(role_prompt or "").split(","):
+        s = seg.strip()
+        if not s:
+            continue
+        k = s.lower()
+        if k in seen:
+            continue
+        if MALE_DENY.search(s):
+            rejected += 1
+            continue
+        seen.add(k)
+        kept.append(s)
+    return kept, rejected
+
+
+# ---------------------------------------------------------------- 主流程
+
 def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
              role_mode="none", role_name="", role_works="", quality_prefix="masterpiece, best quality",
              artist_on=False, extra_body="", negative_on=True, scene_mode="scene",
-             override_text=""):
-    lv = LEVEL_NUM.get(str(level), 0)
+             override_text="", override_mode="direct", role_prompt="", settings=None,
+             appearance_follow=True, outfit_follow=False):
+    sel_key = str(level)
+    if sel_key not in LEVEL_NUM:
+        sel_key = "sfw"
+    sel_num = LEVEL_NUM[sel_key]
 
-    # 面板里选中成品模板时，直接用它当正向，仍按档位生成负向
     override = str(override_text or "").strip()
-    if override:
+    mixed = str(override_mode or "direct") == "mixed"
+    ext_kept, ext_rejected = split_role(role_prompt)
+    ext_subjects = [t for t in ext_kept if SUBJECT_TOKEN.search(t)]
+    ext_others = [t for t in ext_kept if not SUBJECT_TOKEN.search(t)]
+
+    # 外部角色输入存在时，外观 / 服装是否让位（REQ：角色外观必须跟着提示词走）
+    follow = set()
+    if ext_kept:
+        if appearance_follow:
+            follow.update(["hair", "hair_color", "face", "eye_color", "body"])
+        if outfit_follow:
+            follow.update(["clothing", "accessory"])
+
+    # 覆盖直通：直接当正向，完全跳过随机（负向按用户选择档位）
+    if override and not mixed:
         positive = override.rstrip(", ")
         if str(extra_body or "").strip():
             positive = positive + ", " + str(extra_body).strip().strip(",")
-        negative = build_negative(lv, positive, negative_on)
+        negative = build_negative(sel_num, positive, negative_on)
+        lines = [f"档位: {sel_key}",
+                 "模式: 模板覆盖（使用面板选中的成品提示词）",
+                 "想恢复随机：把 template_override 清空"]
+        if ext_kept:
+            lines.append("角色来源: 外部输入（当前为模板覆盖，角色输入未生效）")
         return {
             "positive": positive,
             "negative": negative,
-            "level": level,
-            "report": "\n".join([f"档位: {level}",
-                                 "模式: 模板覆盖（使用面板选中的成品提示词）",
-                                 "想恢复随机：把 template_override 清空"]),
+            "level": f"{sel_num if sel_num != 99 else 'any'} · {LEVEL_ZH.get(sel_key, '不限')}",
+            "report": "\n".join(lines),
         }
 
     rng = random.Random(seed) if int(seed) >= 0 else random.Random()
+    tv, basis = pick_target(sel_key, settings, rng)
 
     try:
         weights = json.loads(slot_weights) if str(slot_weights or "").strip() else {}
@@ -188,18 +297,47 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     except Exception:
         weights = {}
 
+    head = [f"选择档位: {sel_key} · {LEVEL_ZH.get(sel_key, '不限')}",
+            f"本次目标档位: Lv{tv} · {LEVEL_ZH.get(TARGET_LEVELS[tv], '')}",
+            f"抽样依据: {basis}"]
+    if ext_rejected:
+        head.append(f"已拒绝 {ext_rejected} 个男性词")
+    if ext_kept:
+        head.append("外部角色: 未按档位过滤")
+    if follow:
+        head.append("让位槽位: " + " / ".join(
+            s["label"] for s in SLOTS if s["key"] in follow) + "（交给角色输入）")
+
+    if override:                                    # 混合模式：锁定词 + 局部随机
+        return _generate_mixed(sel_key, sel_num, tv, basis, head, override, rng,
+                               tag_cap, base_prob, weights, role_mode, role_name,
+                               role_works, quality_prefix, artist_on, extra_body,
+                               negative_on, scene_mode, seed, settings,
+                               ext_kept, ext_rejected, follow,
+                               appearance_follow, outfit_follow)
+
     if str(scene_mode) == "scene":
-        res = _generate_scene(lv, level, rng, tag_cap, base_prob, weights, role_mode,
-                              role_name, role_works, quality_prefix, artist_on,
-                              extra_body, negative_on, seed)
+        # 让位的槽位在场景路径里靠权重 0 关闭：scenes.build 的完整性校验
+        # 见到 `b.on(key)` 为 False 就跳过该槽，不会判「缺槽」重抽。
+        scene_weights = dict(weights)
+        for k in follow:
+            scene_weights[k] = 0
+        res = _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob,
+                              scene_weights, role_mode, role_name, role_works, quality_prefix,
+                              artist_on, extra_body, negative_on, seed,
+                              ext_subjects, ext_others, ext_rejected,
+                              self_appear=("hair" in follow))
         if res:
             return res
         # 场景拼不出来（几乎不会发生）就退回自由随机，保证节点永远有输出
-        return generate(level=level, seed=seed, tag_cap=tag_cap, base_prob=base_prob,
+        return generate(level=sel_key, seed=seed, tag_cap=tag_cap, base_prob=base_prob,
                         slot_weights=slot_weights, role_mode=role_mode, role_name=role_name,
                         role_works=role_works, quality_prefix=quality_prefix,
                         artist_on=artist_on, extra_body=extra_body,
-                        negative_on=negative_on, scene_mode="free")
+                        negative_on=negative_on, scene_mode="free",
+                        role_prompt=", ".join(ext_kept), settings=settings,
+                        appearance_follow=appearance_follow, outfit_follow=outfit_follow)
+
     chosen = {}          # slot -> [(en, zh)]
     seen = set()
 
@@ -214,26 +352,39 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
         chosen.setdefault(slot_key, []).append(tag)
         return True
 
-    # 主体：必定 1girl + solo
-    add("subject", {"en": "1girl", "zh": "一个女孩", "lv": 0})
-    add("subject", {"en": "solo", "zh": "单人或单人特写", "lv": 0})
-    if rng.random() < 0.55:
-        for _ in range(6):
-            t = rng.choice(_subjects(lv))
-            if add("subject", t):
-                break
+    # 主体：外部输入含主体词时替换默认主体（REQ-104 缺口 5）
+    if ext_subjects:
+        for t in ext_subjects:
+            add("subject", {"en": t, "zh": "", "lv": 0})
+    else:
+        add("subject", {"en": "1girl", "zh": "一个女孩", "lv": 0})
+        add("subject", {"en": "solo", "zh": "单人或单人特写", "lv": 0})
+        if rng.random() < 0.55:
+            for _ in range(6):
+                t = rng.choice(_subjects(tv))
+                if add("subject", t):
+                    break
 
-    # 角色（可选）：角色 tag + 官方外观标签
-    char = pick_character(rng, role_mode, role_name, role_works)
-    if char:
-        add("character", {"en": char["tag"], "zh": char["zh"], "lv": 0})
-        for a in char.get("auto", [])[:6]:
-            if tag_level(a["en"]) <= lv:
-                add("character", {"en": a["en"], "zh": a.get("zh", ""), "lv": tag_level(a["en"])})
+    # 角色：外部输入优先，其次内置词库（优先级 template_override > role_prompt > 词库）
+    char = None
+    role_from = "不指定"
+    if ext_others:
+        role_from = "外部输入"
+        for t in ext_others:
+            add("character", {"en": t, "zh": "", "lv": 0})
+    else:
+        char = pick_character(rng, role_mode, role_name, role_works)
+        if char:
+            role_from = "词库"
+            add("character", {"en": char["tag"], "zh": char["zh"], "lv": 0})
+            for a in char.get("auto", [])[:6]:
+                if tag_level(a["en"]) <= tv:
+                    add("character", {"en": a["en"], "zh": a.get("zh", ""),
+                                      "lv": tag_level(a["en"])})
 
     # 画师（可选）
     if artist_on:
-        pool = drawable("artist", lv)
+        pool = drawable("artist", tv)
         if pool:
             add("artstyle", rng.choice(pool))
 
@@ -242,6 +393,8 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     for s in SLOTS:
         if s["key"] in ("subject", "nsfw"):
             continue
+        if s["key"] in follow:
+            continue                      # 外观 / 服装已交给角色输入
         if s["key"] == "artstyle" and artist_on:
             continue                      # 画师已经占用这个位置
         w = float(weights.get(s["key"], 1.0))
@@ -250,7 +403,7 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
         p = min(1.0, max(0.0, s["prob"] * w * (float(base_prob) / default_base)))
         if s["need"] and rng.random() > p:
             continue
-        pool = [t for c in s["cats"] for t in drawable(c, lv)]
+        pool = [t for c in s["cats"] for t in drawable(c, tv)]
         only = s.get("only")
         if only == "color":
             pool = [t for t in pool if COLORS.search(t["en"])]
@@ -276,7 +429,7 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
     multi_pose = next((x["en"] for x in chosen.get("pose", [])
                        if MULTI_POSE.search(x["en"])
                        and x["en"].lower() not in SOLO_POSE_SAFE), None)
-    if multi_pose:
+    if multi_pose and not ext_subjects:
         chosen["subject"] = [{"en": "2girls", "zh": "两个女孩", "lv": 0}]
         seen.discard("1girl")
         seen.discard("solo")
@@ -285,10 +438,10 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
         chosen.setdefault("composition", []).append(duo)
         seen.add("duo")
 
-    # 成人向：按档位定量，仍受同一套候选池闸门约束
-    nsfw_n = NSFW_COUNT.get(lv, 0)
+    # 成人向：按目标档位定量，仍受同一套候选池闸门约束
+    nsfw_n = NSFW_COUNT.get(tv, 0)
     if nsfw_n:
-        pool = [t for s in SLOTS if s["key"] == "nsfw" for c in s["cats"] for t in drawable(c, lv)]
+        pool = [t for s in SLOTS if s["key"] == "nsfw" for c in s["cats"] for t in drawable(c, tv)]
         pool = [t for t in pool if not NSFW_DENY.search(t["en"])]
         for _ in range(nsfw_n * 4):
             if len(chosen.get("nsfw", [])) >= nsfw_n or not pool:
@@ -296,79 +449,163 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
             add("nsfw", rng.choice(pool))
 
     # 评级词
-    for r in RATING_TAGS.get(lv, []) if lv <= 4 else []:
+    for r in RATING_TAGS.get(tv, []):
         add("rating", {"en": r, "zh": "", "lv": 0})
 
     # 拼装
-    order = ASM_ORDER
     parts = []
     if str(quality_prefix or "").strip():
         parts.append(str(quality_prefix).strip().rstrip(","))
-    for key in order:
+    for key in ASM_ORDER:
         for t in chosen.get(key, []):
             parts.append(t["en"])
     if str(extra_body or "").strip():
         parts.append(str(extra_body).strip())
 
-    # 密度裁剪：去重后按 tag_cap 截断（从尾部丢，先丢修饰类）
-    flat = []
-    for p in parts:
-        for seg in str(p).split(","):
-            seg = seg.strip()
-            if seg and seg.lower() not in {x.lower() for x in flat}:
-                flat.append(seg)
-    cap = int(tag_cap) if int(tag_cap or 0) > 0 else (28 if lv <= 1 else 32)
+    flat = _flatten(parts)
+    cap = int(tag_cap) if int(tag_cap or 0) > 0 else _auto_cap(tv)
     if len(flat) > cap:
         drop_order = ["props", "weather", "composition", "camera", "accessory", "theme", "monster"]
-        dropped = []
         for key in drop_order:
             for t in chosen.get(key, []):
                 if t["en"] in flat and len(flat) > cap:
                     flat.remove(t["en"])
-                    dropped.append(t["en"])
         flat = flat[:cap]
 
     positive = ", ".join(flat)
-    negative = build_negative(lv, positive, negative_on)
+    negative = build_negative(tv, positive, negative_on)
 
     counts = {s["label"]: len(chosen.get(s["key"], [])) for s in SLOTS if chosen.get(s["key"])}
     if chosen.get("character"):
         counts["角色"] = len(chosen["character"])
-    report_lines = [
-        f"档位: {lv if lv != 99 else '不限'} · {LEVEL_ZH.get(str(level), '不限')}",
+    report_lines = list(head) + [
         f"标签: {len(flat)} 个（" + " / ".join(f"{k} {v}" for k, v in counts.items()) + "）",
-        f"角色: {char['zh'] if char else '不指定'}",
+        f"角色来源: {role_from}",
         f"种子: {seed}",
         f"负面: {len([x for x in negative.split(',') if x.strip()])} 个",
     ]
     return {
         "positive": positive,
         "negative": negative,
-        "level": f"{lv if lv != 99 else 'any'} · {LEVEL_ZH.get(str(level), '不限')}",
+        "level": f"{sel_num if sel_num != 99 else 'any'} · {LEVEL_ZH.get(sel_key, '不限')}",
         "report": "\n".join(report_lines),
-        "level_num": lv,
+        "level_num": sel_num,
+        "target_level": tv,
         "character": char,
         "picked": [{"slot": k, "en": t["en"], "lv": int(t.get("lv", 0))}
                    for k, items in chosen.items() for t in items],
     }
 
 
-def _generate_scene(lv, level, rng, tag_cap, base_prob, weights, role_mode, role_name,
-                    role_works, quality_prefix, artist_on, extra_body, negative_on, seed):
+def _flatten(parts):
+    flat = []
+    for p in parts:
+        for seg in str(p).split(","):
+            seg = seg.strip()
+            if seg and seg.lower() not in {x.lower() for x in flat}:
+                flat.append(seg)
+    return flat
+
+
+def _generate_mixed(sel_key, sel_num, tv, basis, head, override, rng, tag_cap, base_prob,
+                    weights, role_mode, role_name, role_works, quality_prefix, artist_on,
+                    extra_body, negative_on, scene_mode, seed, settings,
+                    ext_kept, ext_rejected, follow, appearance_follow, outfit_follow):
+    """混合模式：覆盖文本当锁定词条，其余槽位继续随机（REQ-102）。
+
+    顺序策略（Q7 MVP）：锁定词保持原顺序在前，随机补充追加在后。
+    角色词走正常角色槽（主体之后），既不重复也不丢失。
+    """
+    locked, seen = [], set()
+    for seg in override.split(","):
+        s = seg.strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            locked.append(s)
+
+    prefix = str(quality_prefix or "").strip().rstrip(",")
+    prefix_n = len(_flatten([prefix])) if prefix else 0
+    cap = int(tag_cap) if int(tag_cap or 0) > 0 else _auto_cap(tv)
+
+    if len(locked) + prefix_n >= cap:
+        out = ([prefix] if prefix else []) + locked
+        positive = ", ".join(_flatten(out))
+        negative = build_negative(tv, positive, negative_on)
+        lines = list(head) + [
+            "模式: 混合（覆盖词已达标签上限，未追加随机）",
+            f"锁定词: {len(locked)} 个",
+            f"角色来源: {'外部输入' if ext_kept else '不指定'}",
+            f"种子: {seed}",
+        ]
+        return {"positive": positive, "negative": negative,
+                "level": f"{sel_num if sel_num != 99 else 'any'} · {LEVEL_ZH.get(sel_key, '不限')}",
+                "report": "\n".join(lines), "level_num": sel_num, "target_level": tv}
+
+    remain = max(1, cap - len(locked) - prefix_n)
+    # 内层不再抽样：直接把目标档位当选择档位传入，保证内外档位一致
+    inner_cfg = dict(settings or {})
+    inner_cfg["level_dist"] = False
+    body = generate(level=TARGET_LEVELS[tv], seed=seed, tag_cap=remain, base_prob=base_prob,
+                    slot_weights=json.dumps(weights) if weights else "",
+                    role_mode=role_mode, role_name=role_name, role_works=role_works,
+                    quality_prefix="", artist_on=artist_on, extra_body="",
+                    negative_on=negative_on, scene_mode=scene_mode,
+                    override_text="", override_mode="direct",
+                    role_prompt=", ".join(ext_kept), settings=inner_cfg,
+                    appearance_follow=appearance_follow, outfit_follow=outfit_follow)
+
+    body_tags = [x.strip() for x in str(body.get("positive", "")).split(",") if x.strip()]
+    merged = list(locked)
+    for t in body_tags:
+        k = t.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        merged.append(t)
+        if len(merged) + prefix_n >= cap:
+            break
+
+    out = ([prefix] if prefix else []) + merged
+    if str(extra_body or "").strip():
+        out.append(str(extra_body).strip())
+    positive = ", ".join(_flatten(out))
+    negative = build_negative(tv, positive, negative_on)
+
+    lines = list(head) + [
+        "模式: 混合（锁定词在前，其余槽位随机补充）",
+        f"锁定词: {len(locked)} 个 · 随机补充: {max(0, len(merged) - len(locked))} 个",
+        f"角色来源: {'外部输入' if ext_kept else ('词库' if body.get('character') else '不指定')}",
+        f"种子: {seed}",
+    ]
+    return {"positive": positive, "negative": negative,
+            "level": f"{sel_num if sel_num != 99 else 'any'} · {LEVEL_ZH.get(sel_key, '不限')}",
+            "report": "\n".join(lines), "level_num": sel_num, "target_level": tv}
+
+
+def _generate_scene(tv, sel_key, sel_num, basis, head, rng, tag_cap, base_prob, weights,
+                    role_mode, role_name, role_works, quality_prefix, artist_on,
+                    extra_body, negative_on, seed, ext_subjects=None, ext_others=None,
+                    ext_rejected=0, self_appear=True):
     """场景成套路径：环境/季节/服装/道具/姿势绑在一个包里，出来的串自带现实逻辑。"""
     try:
         from . import scenes
     except ImportError:                     # 单独跑脚本时的兜底
         import scenes
 
-    char = pick_character(rng, role_mode, role_name, role_works)
+    ext_subjects = ext_subjects or []
+    ext_others = ext_others or []
+
+    char = None if ext_others else pick_character(rng, role_mode, role_name, role_works)
+    role_from = "外部输入" if ext_others else ("词库" if char else "不指定")
     monster_on = float(weights.get("monster", 1.0) or 0) > 0 and rng.random() < 0.06
 
+    # self_appear=False 表示用户关掉了「外观让位」：即使有角色也照抽外观
+    has_character = (bool(ext_others) or bool(char)) and self_appear
     items, bundle_id = None, None
     for _ in range(60):
-        items, bundle_id = scenes.build(lv, rng, weights, base_prob,
+        items, bundle_id = scenes.build(tv, rng, weights, base_prob,
                                         monster=monster_on,
-                                        has_character=bool(char))
+                                        has_character=has_character)
         if items:
             break
     if not items:
@@ -376,21 +613,23 @@ def _generate_scene(lv, level, rng, tag_cap, base_prob, weights, role_mode, role
 
     # 角色：插在主体后面；官方外观按档位滤一遍
     char_tags = []
-    if char:
+    if ext_others:
+        char_tags = [(t, 0) for t in ext_others]
+    elif char:
         char_tags.append((char["tag"], 0))
         for a in char.get("auto", [])[:6]:
-            if scenes.level_of(a["en"]) <= (99 if lv >= 99 else lv):
+            if scenes.level_of(a["en"]) <= tv:
                 char_tags.append((a["en"], scenes.level_of(a["en"])))
 
-    ordered = []
-    subject_done = False
-    for slot, en in items:
-        ordered.append((slot, en))
-        if slot == "subject" and not subject_done:
-            # 主体标签可能有两个（1girl + solo），等主体组结束后再插角色
-            pass
+    ordered = list(items)
+    if ext_subjects:
+        # 外部主体替代内置主体，位置仍在最前
+        ordered = [(s, e) for s, e in ordered if s != "subject"]
+        ordered = [("subject", t) for t in ext_subjects] + ordered
+
     # 主体组在最前面，统一在第一个非 subject 之前插入角色
-    first_non_subject = next((i for i, (s, _) in enumerate(ordered) if s != "subject"), len(ordered))
+    first_non_subject = next((i for i, (s, _) in enumerate(ordered) if s != "subject"),
+                             len(ordered))
     for i, (en, _) in enumerate(char_tags):
         ordered.insert(first_non_subject + i, ("character", en))
 
@@ -400,7 +639,7 @@ def _generate_scene(lv, level, rng, tag_cap, base_prob, weights, role_mode, role
 
     # 画师（可选）
     if artist_on:
-        pool = drawable("artist", lv)
+        pool = drawable("artist", tv)
         if pool:
             chosen.setdefault("artstyle", []).append({"en": rng.choice(pool)["en"], "lv": 0})
 
@@ -415,13 +654,8 @@ def _generate_scene(lv, level, rng, tag_cap, base_prob, weights, role_mode, role
     if str(extra_body or "").strip():
         parts.append(str(extra_body).strip())
 
-    flat = []
-    for p in parts:
-        for seg in str(p).split(","):
-            seg = seg.strip()
-            if seg and seg.lower() not in {x.lower() for x in flat}:
-                flat.append(seg)
-    cap = int(tag_cap) if int(tag_cap or 0) > 0 else (28 if lv <= 1 else 32)
+    flat = _flatten(parts)
+    cap = int(tag_cap) if int(tag_cap or 0) > 0 else _auto_cap(tv)
     if len(flat) > cap:
         for key in ("props", "weather", "accessory", "camera", "composition", "theme", "monster"):
             for t in chosen.get(key, []):
@@ -430,28 +664,29 @@ def _generate_scene(lv, level, rng, tag_cap, base_prob, weights, role_mode, role
         flat = flat[:cap]
 
     positive = ", ".join(flat)
-    negative = build_negative(lv, positive, negative_on)
+    negative = build_negative(tv, positive, negative_on)
 
     labels = {s["key"]: s["label"] for s in SLOTS}
     labels.update({"breast": "胸围", "season": "季节", "rating": "评级", "time": "时间",
                    "character": "角色", "composition": "构图", "theme": "题材"})
     counts = {}
     for slot, _ in ordered:
-        counts[labels.get(slot, slot)] = counts.get(labels.get(slot, slot), 0) + 1
-    report_lines = [
-        f"档位: {lv if lv != 99 else '不限'} · {LEVEL_ZH.get(str(level), '不限')}",
+        lb = labels.get(slot, slot)
+        counts[lb] = counts.get(lb, 0) + 1
+    report_lines = list(head) + [
         f"场景: {bundle_id}（场景成套，环境/服装/道具/姿势同一套）",
         f"标签: {len(flat)} 个（" + " / ".join(f"{k} {v}" for k, v in counts.items()) + "）",
-        f"角色: {char['zh'] if char else '不指定'}",
+        f"角色来源: {role_from}",
         f"种子: {seed}",
         f"负面: {len([x for x in negative.split(',') if x.strip()])} 个",
     ]
     return {
         "positive": positive,
         "negative": negative,
-        "level": f"{lv if lv != 99 else 'any'} · {LEVEL_ZH.get(str(level), '不限')}",
+        "level": f"{sel_num if sel_num != 99 else 'any'} · {LEVEL_ZH.get(sel_key, '不限')}",
         "report": "\n".join(report_lines),
-        "level_num": lv,
+        "level_num": sel_num,
+        "target_level": tv,
         "character": char,
         "bundle": bundle_id,
         "picked": [{"slot": slot, "en": en, "lv": 0} for slot, en in ordered],

@@ -10,27 +10,26 @@ html,body{margin:0;height:100%;background:#15161a;overflow:hidden}
 <body>
 <script type="module">
 import { openPanel } from "./prompt_forge_core_v6.js";
+// 假节点：可点、可搜、可收藏，但不写回真实节点
 const node = { widgets: [{ name: "template_override", value: "" }], setDirtyCanvas() {} };
 openPanel(node);
 const p = new URLSearchParams(location.search);
 const tab = p.get("tab") || "free";
-const level = p.get("level");
 const q = p.get("q");
-if (level) {
-  const sel = document.querySelector(".pf-win .sel");
-  sel.value = level;
-  sel.dispatchEvent(new Event("change"));
-}
 if (q) {
-  const s = document.querySelector(".pf-win .search");
-  s.value = q;
-  s.dispatchEvent(new Event("input"));
-}
-if (tab === "tpl") {
   setTimeout(() => {
-    document.querySelectorAll(".pf-win .tab")[1].click();
-  }, 800);
+    const s = document.querySelector(".pf-win .search");
+    if (!s) return;
+    s.value = q;
+    s.dispatchEvent(new Event("input"));
+  }, 900);
 }
+const IDX = { free: 0, tpl: 1, scene: 2 };
+setTimeout(() => {
+  const tabs = document.querySelectorAll(".pf-win .tab");
+  const i = IDX[tab] ?? 0;
+  if (tabs[i]) tabs[i].click();
+}, 900);
 </script>
 </body>
 </html>
