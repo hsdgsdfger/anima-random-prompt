@@ -23,6 +23,18 @@ WINTER = re.compile(
     r"\b(winter coat|parka|duffle coat|fur coat|beanie|snow boots|ear muffs)\b", re.I)
 RAIN = re.compile(r"\b(rain|light rain|rainy day|storm|raindrops)\b", re.I)
 
+# 全裸与服装互斥：模型同时看到"全裸"和"护士服"只会画一条布带折中
+GARMENT = re.compile(
+    r"\b(skirt|dress|shirt|t-shirt|blouse|sweater|hoodie|jacket|coat|uniform|"
+    r"jeans|pants|trousers|shorts|slacks|leggings|kimono|yukata|jinbei|qipao|"
+    r"hanfu|sari|robe|bathrobe|pajamas|nightgown|leotard|bodysuit|swimsuit|"
+    r"bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|apron|"
+    r"cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler)\b",
+    re.I)
+HOSIERY = re.compile(
+    r"\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|"
+    r"garter straps?|garter belt)\b", re.I)
+
 # 构图里这些是"整张图结构词"，单条提示词里不能混
 COMP_SKIP = ("solo", "duo", "group", "multiple views", "character sheet",
              "reference sheet", "comic panel", "split screen", "collage layout", "scenery")
@@ -256,6 +268,12 @@ def build(cap, rng, weights=None, base_prob=0.65, monster=False, has_character=F
                      "clothing aside", "up skirt", "bra pull", "clothes lift",
                      "underwear only", "topless", "bottomless", "naked towel"}
             b.items = [(s, e) for s, e in b.items if e not in clash]
+            # 全裸时连衣服一起删：`completely nude` 与 `white nurse dress` 并存
+            # 会让模型折中画一条布带（用户 2026-11-17 报的「胸前总被挡住」）。
+            # 袜子与配饰保留 —— `only socks` 配全裸是合法画风。
+            b.items = [(s, e) for s, e in b.items
+                       if not (s in ("clothing", "accessory")
+                               and GARMENT.search(e) and not HOSIERY.search(e))]
         # 去冲突后可能少了一条，用不带服装动作的通用词补回来
         have = sum(1 for s, _ in b.items if s == "nsfw")
         for t in ["cleavage", "sideboob", "thigh gap", "presenting", "arched back",

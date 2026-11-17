@@ -89,6 +89,23 @@ COLORS = re.compile(
 NSFW_DENY = re.compile(
     r"\b(penis|penises|testicles|male|1boy|boys|yaoi|crotch|groin)\b", re.I)
 
+# ---------------- 全裸 / 穿衣互斥 ----------------
+# 用户 2026-11-17 报「胸前总有两条带子遮挡、档位不管用」。
+# 根因：`completely nude` 与 `white nurse dress` 这类服装同时进正文，
+# 模型收到矛盾指令，只能折中画一条布带 —— 既算穿又算没穿。
+NUDE_TAGS = {"completely nude", "fully nude", "nude", "naked",
+             "nude with accessories only"}
+_GARMENT = re.compile(
+    r"\b(skirt|dress|shirt|t-shirt|blouse|sweater|hoodie|jacket|coat|uniform|"
+    r"jeans|pants|trousers|shorts|slacks|leggings|kimono|yukata|jinbei|qipao|"
+    r"hanfu|sari|robe|bathrobe|pajamas|nightgown|leotard|bodysuit|swimsuit|"
+    r"bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|apron|"
+    r"cloak|cape|armor|serafuku|sailor collar|necktie|bowtie|scarf|muffler)\b",
+    re.I)
+_HOSIERY = re.compile(
+    r"\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|"
+    r"garter straps?|garter belt)\b", re.I)
+
 RATING_TAGS = {0: ["safe"], 1: ["sensitive"], 2: ["nsfw"], 3: ["nsfw", "explicit"], 4: ["nsfw", "explicit"]}
 NSFW_COUNT = {0: 0, 1: 0, 2: 1, 3: 2, 4: 3, 99: 2}
 
@@ -461,6 +478,15 @@ def generate(level="sfw", seed=-1, tag_cap=0, base_prob=0.65, slot_weights="",
             if len(chosen.get("nsfw", [])) >= nsfw_n or not pool:
                 break
             add("nsfw", rng.choice(pool))
+
+    # 全裸时清空服装：`completely nude` 和 `white nurse dress` 同时进正文，
+    # 模型只能折中 —— 画一条布带"既算穿又算没穿"，这就是用户看到的胸前遮挡。
+    # 保留袜子与配饰（only socks 配全裸是合法画风），其余服装一律删。
+    if any(str(t.get("en") or "").strip().lower() in NUDE_TAGS
+           for t in chosen.get("nsfw", [])):
+        for slot in ("clothing", "accessory"):
+            chosen[slot] = [t for t in chosen.get(slot, [])
+                            if not _GARMENT.search(t["en"]) or _HOSIERY.search(t["en"])]
 
     # 评级词
     for r in RATING_TAGS.get(tv, []):
