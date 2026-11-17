@@ -616,7 +616,9 @@ function filteredTpl(skipLevel = false) {
   const q = st.q.trim().toLowerCase();
   let items = tpl.filter((x) => {
     if (st.kind !== "all" && x.kind !== st.kind) return false;
-    if (st.cat !== "all" && (sceneMeta?.[x.bundle]?.[st.cat] !== true)) return false;
+    if (st.cat === "other") {
+      if (x.bundle) return false;
+    } else if (st.cat !== "all" && (sceneMeta?.[x.bundle]?.[st.cat] !== true)) return false;
     if (!skipLevel && st.tplLevel !== "all" && x.level !== st.tplLevel) return false;
     if (st.onlyFav && !st.favTpl.includes(x.id)) return false;
     if (q && !(x.prompt.toLowerCase().includes(q) || (SCENE_ZH[x.bundle] || "").includes(q))) return false;
@@ -645,7 +647,10 @@ function cardOf(item) {
   card._item = item;
   const head = el("div", "card-h");
   head.appendChild(el("span", "no", `#${String(item.index).padStart(3, "0")}`));
-  head.appendChild(el("span", "nm", (SCENE_ZH[item.bundle] || item.bundle) + (item.kind === "monster" ? " · 异种" : "")));
+  const title = item.bundle
+    ? (SCENE_ZH[item.bundle] || item.bundle)
+    : (item.zh || item.group_zh || "V6 场景搭配");
+  head.appendChild(el("span", "nm", title + (item.kind === "monster" ? " · 异种" : "")));
   head.appendChild(el("span", "badge" + (item.kind === "monster" ? " mon" : ""), item.level));
   const star = el("span", "star" + (fav ? " on" : ""), fav ? "★" : "☆");
   star.onclick = () => {
@@ -662,9 +667,11 @@ function cardOf(item) {
 
   const tags = tagsOf(item.prompt);
   const meta = el("div", "card-meta");
+  const srcLabel = item.bundle ? (SCENE_ZH[item.bundle] || item.bundle)
+    : `${item.group_zh || "V6"} · V6`;
   const bits = [item.kind === "monster" ? "异种" : "普通",
     tags.includes("2girls") ? "2girls duo" : "1girl solo",
-    `${tags.length} 标签`, SCENE_ZH[item.bundle] || item.bundle];
+    `${tags.length} 标签`, srcLabel];
   if (item._hit !== undefined) bits.unshift(`重合 ${item._hit}`);
   bits.forEach((x) => meta.appendChild(el("span", null, x)));
   card.appendChild(meta);
@@ -783,7 +790,7 @@ function buildTplTab(container) {
   const list = el("div", "side-list");
   const cats = [["all", "全部", "🏷"], ["indoor", "室内", "🏠"], ["outdoor", "室外", "🌳"],
                 ["night", "夜景", "🌙"], ["cold", "寒冷", "❄"], ["water", "水域", "💧"],
-                ["monster", "异种", "🧬"]];
+                ["monster", "异种", "🧬"], ["other", "V6 场景搭配", "🎬"]];
   cats.forEach(([key, label, ico]) => {
     const row = el("div", "cat" + (st.cat === key ? " on" : ""));
     row.appendChild(el("span", "ico", ico));

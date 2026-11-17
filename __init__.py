@@ -20,7 +20,7 @@ from . import settings as _settings_mod
 from . import char_state as _char_state
 from . import picker as _char_picker
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 SECTION_NAME = "AnimaDecouple/Prompt Forge"
 CHAR_SECTION = "AnimaDecouple/Character"
 
@@ -401,13 +401,17 @@ try:
         kind = (request.query.get("kind") or "").strip().lower()
         data = _UI_CACHE.get("data")
         if data is None:
-            data = _read_json("templates_ui.json", [])
+            # 自产模板 + 从 Anima Wardrobe V6 搬来的场景搭配（src="v6"）
+            data = _read_json("templates_ui.json", []) + _read_json("templates_v6.json", [])
             _UI_CACHE["data"] = data
+        src = (request.query.get("src") or "").strip().lower()
         items = data
         if level and level != "all":
             items = [x for x in items if x.get("level") == level]
         if kind and kind != "all":
             items = [x for x in items if x.get("kind") == kind]
+        if src and src != "all":
+            items = [x for x in items if (x.get("src") or "builtin") == src]
         return web.json_response({"total": len(items), "items": items})
 
     @PromptServer.instance.routes.get("/prompt_forge/userdata")

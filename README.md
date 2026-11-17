@@ -1,6 +1,6 @@
 # Comfyui-Prompt-Forge
 
-> ComfyUI 自定义节点 ｜ 版本 **v0.1.2** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
+> ComfyUI 自定义节点 ｜ 版本 **v0.1.3** ｜ 独立于 Anima Wardrobe V6，不依赖任何第三方库
 
 一个插件，两个节点：
 
@@ -90,8 +90,12 @@ git clone https://github.com/hsdgsdfger/anima-random-prompt.git Comfyui-Prompt-F
 **🎛 自由选词**：分类平铺、中文对照、收藏、最近、搜索、撤销重做（20 步）、
 冲突检查（室内+室外 / 水域+寒冷 / 夜景+白天 / 异种+非异种）、Token 估算。
 
-**🗂 模板卡片**：档位筛选、场景分类、滚动加载 1800 套、标签懒加载并可直接点选、
+**🗂 模板卡片**：档位筛选、场景分类、滚动加载、标签懒加载并可直接点选、
 换一套（同场景）、按已选反查、套用三态确认（替换/追加/取消）。
+
+模板一共 **1897 套**：自产 1800 套（6 档 × 300）+ 从 Anima Wardrobe V6 搬来的
+**97 套场景搭配**（跨槽位配方 / 特写 / 姿势 / 艺术构图，档位 ≥ 1）。
+V6 那批在场景分类里单独归到「V6 场景搭配」。
 
 **🏞 场景包**：45 个场景包，六类筛选，整套套用。
 
@@ -153,7 +157,8 @@ git clone https://github.com/hsdgsdfger/anima-random-prompt.git Comfyui-Prompt-F
 | --- | --- |
 | `data/tags.json` | 25 分类 / 2956 条词条（589 KB） |
 | `data/scenes.json` | 45 个场景包 + 互斥标记（72 KB） |
-| `data/templates_ui.json` | 1800 套模板（1.16 MB） |
+| `data/templates_ui.json` | 1800 套自产模板（1.16 MB） |
+| `data/templates_v6.json` | 97 套 V6 场景搭配（218 KB，可重建） |
 | `data/tag_flags.json` | 418 条 `tag → 场景标记` 索引（18 KB，可重建） |
 | `data/characters.json` | 2432 个角色 / 287 作品（1.16 MB，可重建） |
 | `thumbs/` | 2432 张角色预览图（29 MB，webp） |
@@ -238,7 +243,11 @@ python tools/routes_smoke.py       # 16 个接口 + 两个节点
 
 ```bash
 python tools/build_characters.py --v6 "路径/Comfyui-Anima-Wardrobe-V6"
+python tools/build_v6_templates.py --v6 "路径/Comfyui-Anima-Wardrobe-V6"
 ```
+
+`build_v6_templates.py` 默认排除 sfw 档位与含男性词的条目；
+想保留全部 402 条加 `--keep-sfw --keep-male`。
 
 ---
 

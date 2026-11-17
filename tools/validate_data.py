@@ -11,7 +11,7 @@
 """
 import json
 import os
-import subprocess
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -119,6 +119,31 @@ def check_templates(bundle_ids):
     return len(items)
 
 
+def check_v6_templates():
+    """V6 搬来的场景搭配：id 唯一、档位合法、不含男性词、prompt 非空。"""
+    path = os.path.join(DATA, "templates_v6.json")
+    if not os.path.exists(path):
+        return 0
+    with open(path, encoding="utf-8") as f:
+        items = json.load(f)
+    seen = set()
+    for it in items:
+        tid = it.get("id")
+        if not tid:
+            err("templates_v6 有条目缺 id")
+            continue
+        if tid in seen:
+            err(f"templates_v6 id 重复: {tid}")
+        seen.add(tid)
+        if it.get("level") not in VALID_LEVELS:
+            err(f"templates_v6 {tid} 的 level 非法: {it.get('level')}")
+        if not str(it.get("prompt") or "").strip():
+            err(f"templates_v6 {tid} 的 prompt 为空")
+        if re.search(r"\b(1boy|2boys|3boys)\b", str(it.get("prompt") or ""), re.I):
+            err(f"templates_v6 {tid} 含男性词")
+    return len(items)
+
+
 def check_tag_flags():
     path = os.path.join(DATA, "tag_flags.json")
     if not os.path.exists(path):
@@ -137,6 +162,7 @@ def main():
     n_tags = check_tags()
     bundle_ids = check_scenes()
     n_tpl = check_templates(bundle_ids)
+    n_v6 = check_v6_templates()
     check_tag_flags()
 
     if errors:
@@ -144,7 +170,8 @@ def main():
         for e in errors[:40]:
             print("  ✗", e)
         return 1
-    print(f"校验通过：{EXPECT_CATS} 分类 / {n_tags} 词条 / {len(bundle_ids)} 场景包 / {n_tpl} 模板")
+    print(f"校验通过：{EXPECT_CATS} 分类 / {n_tags} 词条 / {len(bundle_ids)} 场景包 / "
+          f"{n_tpl} 自产模板 + {n_v6} 套 V6 场景搭配")
     return 0
 
 
