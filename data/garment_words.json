@@ -19,5 +19,6 @@
   "not_special_scene": [
     "aquarium_day"
   ],
-  "cloth_state": "\\b(wet clothes|clothes lift|clothing aside|open clothes|dress lift|shirt lift|skirt lift|undressing|panties aside|bra pull|clothes pull)\\b"
+  "cloth_state": "\\b(wet clothes|clothes lift|clothing aside|open clothes|dress lift|shirt lift|skirt lift|undressing|panties aside|bra pull|clothes pull)\\b",
+  "strap_cloth": "\\b(camisole|suspenders?|suspender skirt|straps?|halter|halter top|tube top|tank top|muscle shirt|sleeveless shirt|spaghetti|detached sleeves|spaghetti strap|chest strap|single strap|multiple straps|arm strap|cross-laced clothes|cross-laced|shoulder cutout|off shoulder|bare shoulders|sleeveless|strapless|backless|see-through)\\b"
 }

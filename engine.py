@@ -100,6 +100,10 @@ _GARMENT = _wl_re("garment")
 _HOSIERY = _wl_re("hosiery")
 _NUDE_RE = _wl_re("nude")
 _NSFW_CLOTH = _wl_re("nsfw_cloth")
+# 吊带 / 绑带 / 挂脖 / 露肩这一族。它们不是内衣，擦边档出现是正常的，
+# 但全年龄档不该有 —— 模型看到 "camisole"、"chest strap"、"cross-laced clothes"
+# 就会画出「胸前两条带子」（用户 2026-11-17 反复报的那个）。
+_STRAP = _wl_re("strap_cloth")
 _APPEAR_HINT = _wl_re("appear")
 _CLOTH_STATE = _wl_re("cloth_state")
 # 兼容旧代码里 `t["en"] in NUDE_TAGS` 的写法
@@ -118,9 +122,10 @@ _TOP_RE = re.compile(
 _BOTTOM_RE = re.compile(
     r"\b(skirt|pants|jeans|shorts|trousers|leggings|dress|gown|overalls|jumpsuit|"
     r"romper|sarong|bloomers)\b", re.I)
-# 补衣服时用的安全上衣 / 下装（都是 lv0、覆盖躯干、不会透）
+# 补衣服时用的安全上衣 / 下装（都是 lv0、覆盖躯干、带袖子、不会透）
+# 注意别放 vest / tank top / camisole —— 这些在模型眼里接近吊带背心
 _SAFE_TOPS = ["white shirt", "black shirt", "knit sweater", "turtleneck", "cardigan",
-              "hoodie", "blouse", "dress shirt", "sweatshirt", "vest"]
+              "hoodie", "blouse", "dress shirt", "sweatshirt", "long sleeve shirt"]
 _SAFE_BOTTOMS = ["pleated skirt", "long skirt", "pants", "jeans", "shorts",
                  "trousers", "pencil skirt", "denim skirt"]
 
@@ -128,7 +133,10 @@ _SAFE_BOTTOMS = ["pleated skirt", "long skirt", "pants", "jeans", "shorts",
 # 正向里已经有的词会被 build_negative 去掉，不会自相矛盾。
 _NEG_SAFE = ["nsfw", "nude", "naked", "topless", "nipples", "cleavage",
              "underwear", "panties", "bra", "bikini", "lingerie", "see-through",
-             "spread legs", "ass focus", "crotch"]
+             "spread legs", "ass focus", "crotch",
+             # 吊带 / 绑带族：只写"衬衫"时模型容易自己加成吊带背心或胸前绑带
+             "camisole", "suspenders", "straps", "halter", "tube top",
+             "detached sleeves", "strapless", "bare shoulders", "off shoulder"]
 _NEG_SUGGESTIVE = ["nsfw", "nude", "naked", "topless", "nipples", "panties", "crotch"]
 
 RATING_TAGS = {0: ["safe"], 1: ["sensitive"], 2: ["nsfw"], 3: ["nsfw", "explicit"], 4: ["nsfw", "explicit"]}
@@ -185,8 +193,9 @@ def drawable(cat_id, lv):
     每次遍历几百条纯属浪费。返回的 list 只读，调用方都在上面做推导式，不会改它。
 
     全年龄（lv<=0）额外用词表兜一层：只要命中 nsfw_cloth（泳装 / 内衣 /
-    透明 / 裸露），即使数据里标成 0 也不进池子。数据是人手标的，
-    漏标一次就是一张 sfw 比基尼（用户 2026-11-17 报的），这里不靠标注。
+    透明 / 裸露）或 strap_cloth（吊带 / 绑带 / 挂脖），即使数据里标成 0
+    也不进池子。数据是人手标的，漏标一次就是一张 sfw 泳装图
+    （用户 2026-11-17 报的），这里不靠标注。
     """
     key = ("pool", cat_id, int(lv))
     hit = _CACHE.get(key)
@@ -198,7 +207,7 @@ def drawable(cat_id, lv):
             continue
         if int(t["lv"]) > lv:
             continue
-        if int(lv) <= 0 and _NSFW_CLOTH.search(t["en"]):
+        if int(lv) <= 0 and (_NSFW_CLOTH.search(t["en"]) or _STRAP.search(t["en"])):
             continue
         out.append(t)
     _CACHE[key] = out
@@ -252,11 +261,15 @@ def _apparel_ok(en, tv):
 
     角色库的 outfit / appearance 是从参考图统计出来的，标签不一定收录在
     tags.json 里（tag_level 查不到就默认 0），光看档位会漏。所以低档位
-    再用词表兜一层：泳装 / 内衣一律不算全年龄（用户 2026-11-17 报的
-    「sfw 出比基尼」有一半就是角色官方服装本身就是泳装）。
+    再用词表兜一层：泳装 / 内衣 / 吊带绑带一律不算全年龄
+    （用户 2026-11-17 报的「sfw 出比基尼」「胸前两条带子」有一半就是
+    角色官方服装本身带这些）。
     """
     tv = int(tv)
-    if tv <= 1 and _NSFW_CLOTH.search(str(en)) and not _HOSIERY.search(str(en)):
+    s = str(en)
+    if tv <= 1 and _NSFW_CLOTH.search(s) and not _HOSIERY.search(s):
+        return False
+    if tv <= 0 and _STRAP.search(s):
         return False
     return tag_level(en) <= tv
 
@@ -746,11 +759,13 @@ def _dress_names(names, rng):
     """把一组服装词洗成「全年龄能穿的一套」，返回 (新列表, 清掉数, 补上数)。
 
     两条规则：
-      1. 命中 nsfw_cloth（泳装 / 内衣 / 透明）的删掉，袜子除外；
+      1. 命中 nsfw_cloth（泳装 / 内衣 / 透明）或 strap_cloth（吊带 / 绑带）的删掉，
+         袜子除外；
       2. 没有上衣就补一件，没有下装且不是连衣裙/和服这类长款就补一条。
     """
     kept = [n for n in names
-            if not _NSFW_CLOTH.search(n) or _HOSIERY.search(n)]
+            if (not _NSFW_CLOTH.search(n) or _HOSIERY.search(n))
+            and not _STRAP.search(n)]
     dropped = len(names) - len(kept)
     lower = {n.lower() for n in kept}
     added = []

@@ -19,12 +19,19 @@ _FALLBACK = {
                 r"bikini|lingerie|underwear|bra|panties|camisole|cardigan|vest|"
                 r"apron|cloak|cape|armor|serafuku|necktie|bowtie|scarf|muffler|"
                 r"clothes|outfit|\w*suit|\w*sleeves?|\w*coat|knitwear|swimwear|wear)\b"),
-    "hosiery": (r"\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers|"
-                r"garter straps?|garter belt)\b"),
+    "hosiery": (r"\b(socks|thighhighs|stockings|pantyhose|kneehighs|leg warmers)\b"),
     "nude": r"^(completely nude|fully nude|nude|naked|nude with accessories only)$",
     "nsfw_cloth": (r"\b(bikini|swimsuit|micro bikini|sling|string bikini|lingerie|"
                    r"underwear|panties|bra|pasties|see-through|transparent|topless|"
-                   r"nude|naked|sideboob|underboob|swimwear)\b"),
+                   r"nude|naked|sideboob|underboob|swimwear|leotard|bodysuit|"
+                   r"garter straps?|garter belt|micro skirt)\b"),
+    # 吊带 / 绑带 / 挂脖 / 露肩族：擦边档正常，全年龄档不该有
+    "strap_cloth": (r"\b(camisole|suspenders?|suspender skirt|straps?|halter|halter top|"
+                    r"tube top|tank top|muscle shirt|sleeveless shirt|spaghetti|"
+                    r"detached sleeves|spaghetti strap|chest strap|single strap|"
+                    r"multiple straps|arm strap|cross-laced clothes|cross-laced|"
+                    r"shoulder cutout|off shoulder|bare shoulders|sleeveless|"
+                    r"strapless|backless|see-through)\b"),
     "appear": (r"\b(hair|eyes|eyebrows|eyelashes|skin|breasts?|chest|waist|hips|"
                r"thighs|figure|freckles|mole|horn|ears|tail|wings|halo)\b"),
     "cloth_state": (r"\b(wet clothes|clothes lift|clothing aside|open clothes|"
@@ -43,9 +50,14 @@ def _load():
         try:
             with open(_PATH, "r", encoding="utf-8") as f:
                 raw = json.load(f)
-            data = {}
-            for k, v in _FALLBACK.items():
-                data[k] = raw.get(k) or v
+            # 兜底表先铺底，再用文件里的值覆盖；文件里新增的键（以后加词表）
+            # 也要一起收进来，否则只在 json 里加键等于没加。
+            data = dict(_FALLBACK)
+            for k, v in raw.items():
+                if k.startswith("_"):
+                    continue
+                if v:
+                    data[k] = v
         except Exception:
             data = dict(_FALLBACK)
         _DATA = data
